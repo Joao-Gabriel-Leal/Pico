@@ -83,3 +83,74 @@ export async function uploadToCloudinary({ buffer, filename, mimetype, kind }) {
     resourceType: payload.resource_type,
   }
 }
+
+function extractCloudinaryAsset(url) {
+  if (!url) return null
+
+  try {
+    const parsed = new URL(url)
+    const parts = parsed.pathname.split('/').filter(Boolean)
+    const uploadIndex = parts.findIndex((item) => item === 'upload')
+
+    if (uploadIndex < 1) return null
+
+    const resourceType = parts[uploadIndex - 1]
+    const publicIdParts = parts.slice(uploadIndex + 1)
+    if (!publicIdParts.length) return null
+
+    if (/^v\d+$/.test(publicIdParts[0])) {
+      publicIdParts.shift()
+    }
+
+    if (!publicIdParts.length) return null
+
+    const lastPart = publicIdParts[publicIdParts.length - 1]
+    publicIdParts[publicIdParts.length - 1] = lastPart.replace(/\.[^.]+$/, '')
+
+    return {
+      resourceType,
+      publicId: publicIdParts.join('/'),
+    }
+  } catch {
+    return null
+  }
+}
+
+export async function deleteCloudinaryAsset({ publicId, resourceType = 'image' }) {
+  const { cloudName, apiKey, apiSecret } = getCloudinaryConfig()
+  const timestamp = Math.floor(Date.now() / 1000)
+  const signature = makeSignature(
+    {
+      invalidate: true,
+      public_id: publicId,
+      timestamp,
+    },
+    apiSecret,
+  )
+
+  const formData = new FormData()
+  formData.append('public_id', publicId)
+  formData.append('invalidate', 'true')
+  formData.append('api_key', apiKey)
+  formData.append('timestamp', String(timestamp))
+  formData.append('signature', signature)
+
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/destroy`, {
+    method: 'POST',
+    body: formData,
+  })
+
+  const payload = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    throw new Error(payload.error?.message || 'Nao foi possivel remover a midia da nuvem.')
+  }
+
+  return payload.result === 'ok' || payload.result === 'not found'
+}
+
+export async function deleteCloudinaryAssetFromUrl(url) {
+  const asset = extractCloudinaryAsset(url)
+  if (!asset) return false
+  return deleteCloudinaryAsset(asset)
+}

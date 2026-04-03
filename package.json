@@ -16,7 +16,8 @@
     "start:server": "node backend/server.js",
     "db:migrate": "node database/migrate.js",
     "db:seed": "node database/seed.js",
-    "db:setup": "npm run db:migrate && npm run db:seed"
+    "db:setup": "npm run db:migrate && npm run db:seed",
+    "db:clear-demo": "node database/clear-demo.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

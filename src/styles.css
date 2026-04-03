@@ -856,7 +856,7 @@ label {
   bottom: 0;
   z-index: 40;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 4px;
   padding: 10px 12px 14px;
   background: rgba(255, 255, 255, 0.96);
@@ -965,6 +965,20 @@ label {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 248, 248, 0.98)),
     var(--surface);
+}
+
+.search-input-shell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.search-input-shell input {
+  flex: 1;
+}
+
+.search-result-card {
+  gap: 14px;
 }
 
 .moderation-banner {
@@ -1292,6 +1306,7 @@ label {
   .map-card-header,
   .hero-actions,
   .inline-actions,
+  .search-input-shell,
   .post-card-actions,
   .post-action-row,
   .comment-form,

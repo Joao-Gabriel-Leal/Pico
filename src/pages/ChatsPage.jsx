@@ -283,10 +283,10 @@ export default function ChatsPage() {
               ) : (
                 <div className="empty-state">
                   <p className="muted-text">
-                    Siga pessoas no perfil para liberar conversas privadas aqui.
+                    Procure pessoas na aba de pesquisa para seguir e liberar conversas privadas aqui.
                   </p>
-                  <Link className="secondary-button small-link-button full-width" to="/perfil">
-                    Ir para perfil
+                  <Link className="secondary-button small-link-button full-width" to="/pesquisa">
+                    Ir para pesquisa
                   </Link>
                 </div>
               )}

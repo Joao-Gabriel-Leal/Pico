@@ -30,6 +30,7 @@ export default function SocialPostCard({
   const [following, setFollowing] = useState([])
   const [shareTarget, setShareTarget] = useState('')
   const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
 
   useEffect(() => {
     setLocalItem(item)
@@ -50,6 +51,7 @@ export default function SocialPostCard({
 
     setSavingLike(true)
     setError('')
+    setMessage('')
 
     try {
       const payload = await apiRequest(`/api/media/${localItem.id}/likes`, {
@@ -71,6 +73,7 @@ export default function SocialPostCard({
 
     setSavingComment(true)
     setError('')
+    setMessage('')
 
     try {
       const payload = await apiRequest(`/api/media/${localItem.id}/comments`, {
@@ -95,6 +98,7 @@ export default function SocialPostCard({
 
     setDeleting(true)
     setError('')
+    setMessage('')
 
     try {
       await apiRequest(`/api/media/${localItem.id}`, {
@@ -112,6 +116,7 @@ export default function SocialPostCard({
     try {
       await navigator.clipboard.writeText(shareUrl)
       setError('')
+      setMessage('Link copiado para a area de transferencia.')
       setShowMenu(false)
     } catch {
       setError('Nao foi possivel copiar o link agora.')
@@ -126,6 +131,7 @@ export default function SocialPostCard({
           text: `Olha esse post do ${localItem.pico?.name || 'PicoLiga'}`,
           url: shareUrl,
         })
+        setMessage('Compartilhamento externo iniciado.')
       } else {
         await handleCopyLink()
       }
@@ -158,6 +164,7 @@ export default function SocialPostCard({
 
     setSharingDm(true)
     setError('')
+    setMessage('')
 
     try {
       let conversationId = ''
@@ -186,6 +193,7 @@ export default function SocialPostCard({
         },
       })
       setShowMenu(false)
+      setMessage('Post enviado na DM.')
     } catch (nextError) {
       setError(nextError.message)
     } finally {
@@ -313,12 +321,19 @@ export default function SocialPostCard({
         <button
           className="post-action-button"
           type="button"
+          onClick={handleExternalShare}
+        >
+          Compartilhar
+        </button>
+        <button
+          className={showMenu ? 'post-action-button active' : 'post-action-button'}
+          type="button"
           onClick={() => {
-            setShowMenu(true)
+            setShowMenu((current) => !current)
             loadConversationsForShare()
           }}
         >
-          Compartilhar
+          Enviar na DM
         </button>
         <span className="status-pill">{localItem.commentsCount || localItem.comments?.length || 0} comentarios</span>
         {showPicoLink && localItem.pico ? (
@@ -356,6 +371,7 @@ export default function SocialPostCard({
         </form>
       ) : null}
 
+      {message ? <p className="success-text">{message}</p> : null}
       {error ? <p className="error-text">{error}</p> : null}
     </article>
   )

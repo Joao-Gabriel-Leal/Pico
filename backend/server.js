@@ -3,7 +3,7 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import express from 'express'
 import multer from 'multer'
-import { uploadToCloudinary } from './cloudinary.js'
+import { deleteCloudinaryAssetFromUrl, uploadToCloudinary } from './cloudinary.js'
 import {
   createRepository,
   validatePicoPayload,
@@ -454,7 +454,21 @@ app.delete('/api/media/:mediaId/comments/:commentId', requireAuth, async (reques
 
 app.delete('/api/media/:mediaId', requireAuth, async (request, response) => {
   try {
-    response.json(await repository.deleteMedia(request.currentUser.id, request.params.mediaId))
+    const payload = await repository.deleteMedia(request.currentUser.id, request.params.mediaId)
+    let storageDeleted = false
+
+    if (payload.fileUrl) {
+      try {
+        storageDeleted = await deleteCloudinaryAssetFromUrl(payload.fileUrl)
+      } catch {
+        storageDeleted = false
+      }
+    }
+
+    response.json({
+      ...payload,
+      storageDeleted,
+    })
   } catch (error) {
     response.status(400).json({ error: error.message })
   }

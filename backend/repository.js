@@ -2677,6 +2677,8 @@ export async function createRepository() {
           deleted: true,
           mediaId,
           picoId: mediaRow.pico_id,
+          fileUrl: mediaRow.file_url,
+          mediaType: mediaRow.media_type,
         }
       })
     },

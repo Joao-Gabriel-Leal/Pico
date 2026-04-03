@@ -10,6 +10,7 @@ import FeedPage from './pages/FeedPage'
 import NewPicoPage from './pages/NewPicoPage'
 import PicoPage from './pages/PicoPage'
 import ProfilePage from './pages/ProfilePage'
+import SearchPage from './pages/SearchPage'
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
           <Route path="/explorar" element={<Navigate to="/mapa" replace />} />
           <Route path="/mapa" element={<ExplorePage />} />
           <Route path="/eventos" element={<EventsPage />} />
+          <Route path="/pesquisa" element={<SearchPage />} />
           <Route path="/eventos/:eventId" element={<EventDetailPage />} />
           <Route path="/conversas" element={<ChatsPage />} />
           <Route path="/videos" element={<Navigate to="/feed" replace />} />
