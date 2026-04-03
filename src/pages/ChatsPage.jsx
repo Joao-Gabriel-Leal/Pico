@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiRequest } from '../api'
 import { useAuth } from '../auth'
@@ -15,6 +15,7 @@ export default function ChatsPage() {
   const { user, token } = useAuth()
   const [following, setFollowing] = useState([])
   const [conversations, setConversations] = useState([])
+  const [searchText, setSearchText] = useState('')
   const [selectedConversationId, setSelectedConversationId] = useState('')
   const [selectedConversation, setSelectedConversation] = useState(null)
   const [messageText, setMessageText] = useState('')
@@ -22,7 +23,9 @@ export default function ChatsPage() {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
 
-  async function loadInbox(preferredConversationId = '') {
+  async function loadInbox(preferredConversationId = '', refreshThread = true) {
+    if (!user) return
+
     setLoading(true)
 
     try {
@@ -38,10 +41,10 @@ export default function ChatsPage() {
 
       setSelectedConversationId(nextConversationId)
 
-      if (nextConversationId) {
+      if (nextConversationId && refreshThread) {
         const detailPayload = await apiRequest(`/api/dms/${nextConversationId}`, { token })
         setSelectedConversation(detailPayload.conversation)
-      } else {
+      } else if (!nextConversationId) {
         setSelectedConversation(null)
       }
     } catch (nextError) {
@@ -56,6 +59,53 @@ export default function ChatsPage() {
     loadInbox()
   }, [token, user])
 
+  useEffect(() => {
+    if (!user || !selectedConversationId) return undefined
+
+    const interval = window.setInterval(async () => {
+      try {
+        const [inboxPayload, detailPayload] = await Promise.all([
+          apiRequest('/api/dms', { token }),
+          apiRequest(`/api/dms/${selectedConversationId}`, { token }),
+        ])
+
+        setFollowing(inboxPayload.following)
+        setConversations(inboxPayload.conversations)
+        setSelectedConversation(detailPayload.conversation)
+      } catch {}
+    }, 4000)
+
+    return () => window.clearInterval(interval)
+  }, [selectedConversationId, token, user])
+
+  const unreadTotal = useMemo(
+    () => conversations.reduce((total, conversation) => total + Number(conversation.unreadCount || 0), 0),
+    [conversations],
+  )
+
+  const filteredConversations = useMemo(() => {
+    const normalized = searchText.trim().toLowerCase()
+    if (!normalized) return conversations
+
+    return conversations.filter((conversation) => {
+      const name = conversation.otherUser?.displayName?.toLowerCase() || ''
+      const username = conversation.otherUser?.username?.toLowerCase() || ''
+      const text = conversation.lastMessage?.text?.toLowerCase() || ''
+      return name.includes(normalized) || username.includes(normalized) || text.includes(normalized)
+    })
+  }, [conversations, searchText])
+
+  const filteredFollowing = useMemo(() => {
+    const normalized = searchText.trim().toLowerCase()
+    if (!normalized) return following
+
+    return following.filter((person) => {
+      const name = person.displayName?.toLowerCase() || ''
+      const username = person.username?.toLowerCase() || ''
+      return name.includes(normalized) || username.includes(normalized)
+    })
+  }, [following, searchText])
+
   async function handleSelectConversation(conversationId) {
     setSelectedConversationId(conversationId)
     setError('')
@@ -63,6 +113,11 @@ export default function ChatsPage() {
     try {
       const payload = await apiRequest(`/api/dms/${conversationId}`, { token })
       setSelectedConversation(payload.conversation)
+      await apiRequest(`/api/dms/${conversationId}/read`, {
+        method: 'POST',
+        token,
+      })
+      await loadInbox(conversationId, false)
     } catch (nextError) {
       setError(nextError.message)
     }
@@ -82,7 +137,7 @@ export default function ChatsPage() {
 
       setSelectedConversationId(payload.conversation.id)
       setSelectedConversation(payload.conversation)
-      await loadInbox(payload.conversation.id)
+      await loadInbox(payload.conversation.id, false)
     } catch (nextError) {
       setError(nextError.message)
     }
@@ -103,7 +158,7 @@ export default function ChatsPage() {
       })
       setSelectedConversation(payload.conversation)
       setMessageText('')
-      await loadInbox(payload.conversation.id)
+      await loadInbox(payload.conversation.id, false)
     } catch (nextError) {
       setError(nextError.message)
     } finally {
@@ -117,7 +172,7 @@ export default function ChatsPage() {
         <div className="side-card">
           <h1>Entre para conversar</h1>
           <p className="muted-text">
-            A DM agora usa uma inbox mais limpa, no estilo rede social, com conversa privada entre perfis.
+            A DM agora usa inbox, conversa individual, bolhas de mensagem e contador de mensagens nao lidas.
           </p>
           <Link className="primary-button small-link-button" to="/entrar">
             Entrar agora
@@ -137,18 +192,37 @@ export default function ChatsPage() {
                 <p className="eyebrow">Inbox</p>
                 <h1>Mensagens</h1>
               </div>
-              <span>{conversations.length}</span>
+              <span className="status-pill">{unreadTotal} nao lidas</span>
+            </div>
+
+            <input
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              placeholder="Pesquisar conversas ou pessoas"
+            />
+
+            <div className="story-row">
+              {following.slice(0, 8).map((person) => (
+                <button key={person.id} className="story-card" onClick={() => handleStartConversation(person.id)}>
+                  {person.avatarUrl ? (
+                    <MediaAsset className="avatar-circle avatar-mini" src={person.avatarUrl} alt={person.displayName} />
+                  ) : (
+                    <div className="avatar-circle avatar-mini">{person.displayName.slice(0, 1).toUpperCase()}</div>
+                  )}
+                  <span>{person.displayName}</span>
+                </button>
+              ))}
             </div>
 
             {loading ? <p className="muted-text">Carregando conversas...</p> : null}
 
             <div className="list-stack compact-list">
-              {conversations.length ? (
-                conversations.map((conversation) => (
+              {filteredConversations.length ? (
+                filteredConversations.map((conversation) => (
                   <button
                     key={conversation.id}
                     className={
-                      conversation.id === selectedConversationId ? 'list-item active' : 'list-item'
+                      conversation.id === selectedConversationId ? 'list-item active dm-list-item' : 'list-item dm-list-item'
                     }
                     onClick={() => handleSelectConversation(conversation.id)}
                   >
@@ -165,7 +239,11 @@ export default function ChatsPage() {
                         <p>{conversation.lastMessage?.text || 'Sem mensagens ainda.'}</p>
                       </div>
                     </div>
-                    <span>{conversation.lastMessage ? formatTime(conversation.lastMessage.createdAt) : ''}</span>
+
+                    <div className="dm-list-meta">
+                      <span>{conversation.lastMessage ? formatTime(conversation.lastMessage.createdAt) : ''}</span>
+                      {conversation.unreadCount ? <span className="pill">{conversation.unreadCount}</span> : null}
+                    </div>
                   </button>
                 ))
               ) : (
@@ -176,13 +254,13 @@ export default function ChatsPage() {
             <div className="section-divider" />
 
             <div className="section-title">
-              <h2>Seguindo</h2>
-              <span>{following.length}</span>
-            </div>
+                <h2>Seguindo</h2>
+                <span>{filteredFollowing.length}</span>
+              </div>
 
             <div className="list-stack compact-list">
-              {following.length ? (
-                following.map((person) => (
+              {filteredFollowing.length ? (
+                filteredFollowing.map((person) => (
                   <button
                     key={person.id}
                     className="list-item"
@@ -205,7 +283,7 @@ export default function ChatsPage() {
               ) : (
                 <div className="empty-state">
                   <p className="muted-text">
-                    Siga pessoas no perfil para liberar conversas mais organizadas aqui.
+                    Siga pessoas no perfil para liberar conversas privadas aqui.
                   </p>
                   <Link className="secondary-button small-link-button full-width" to="/perfil">
                     Ir para perfil
@@ -254,7 +332,7 @@ export default function ChatsPage() {
 
                 <form className="dm-composer" onSubmit={handleSendMessage}>
                   <textarea
-                    rows="3"
+                    rows="2"
                     placeholder="Escreva uma mensagem..."
                     value={messageText}
                     onChange={(event) => setMessageText(event.target.value)}

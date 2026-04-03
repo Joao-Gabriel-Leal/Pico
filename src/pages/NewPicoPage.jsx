@@ -12,7 +12,10 @@ export default function NewPicoPage() {
   const [loadingLocation, setLoadingLocation] = useState(false)
   const [saving, setSaving] = useState(false)
   const [uploadingCover, setUploadingCover] = useState(false)
+  const [uploadingGallery, setUploadingGallery] = useState(false)
+  const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [galleryUploads, setGalleryUploads] = useState([])
   const [form, setForm] = useState({
     name: '',
     primarySportId: '',
@@ -82,9 +85,43 @@ export default function NewPicoPage() {
     }
   }
 
+  async function handleGalleryFilesChange(event) {
+    const files = Array.from(event.target.files || [])
+    if (!files.length) return
+
+    setUploadingGallery(true)
+    setError('')
+
+    try {
+      const uploadedItems = []
+
+      for (const file of files) {
+        const kind = file.type.startsWith('video/') ? 'video' : 'image'
+        const uploadedUrl = await uploadSelectedFile(file, {
+          token,
+          kind,
+        })
+
+        uploadedItems.push({
+          title: file.name.replace(/\.[^.]+$/, ''),
+          fileUrl: uploadedUrl,
+          mediaType: kind === 'video' ? 'video' : 'photo',
+        })
+      }
+
+      setGalleryUploads((current) => [...current, ...uploadedItems])
+    } catch (nextError) {
+      setError(nextError.message)
+    } finally {
+      setUploadingGallery(false)
+      event.target.value = ''
+    }
+  }
+
   async function handleSubmit(event) {
     event.preventDefault()
     setError('')
+    setMessage('')
     setSaving(true)
 
     try {
@@ -93,6 +130,20 @@ export default function NewPicoPage() {
         token,
         body: form,
       })
+
+      for (const mediaItem of galleryUploads) {
+        await apiRequest(`/api/picos/${payload.item.slug}/media`, {
+          method: 'POST',
+          token,
+          body: mediaItem,
+        })
+      }
+
+      setMessage(
+        user.permissions?.includes('pico.approve')
+          ? 'Pico criado com sucesso.'
+          : 'Pico enviado para aprovacao da administracao.',
+      )
       navigate(`/picos/${payload.item.slug}`)
     } catch (nextError) {
       setError(nextError.message)
@@ -117,20 +168,41 @@ export default function NewPicoPage() {
     )
   }
 
+  if (!user.permissions?.includes('pico.create')) {
+    return (
+      <section className="simple-page">
+        <div className="side-card">
+          <h1>Seu perfil nao pode criar picos</h1>
+          <p className="muted-text">
+            No sistema novo, a criacao de picos depende da role e das permissoes do usuario.
+          </p>
+          <Link className="primary-button small-link-button" to="/perfil">
+            Voltar para perfil
+          </Link>
+        </div>
+      </section>
+    )
+  }
+
   return (
     <section className="simple-page">
-      <div className="side-card">
-        <div className="section-title">
-          <div>
-            <p className="eyebrow">Novo pico</p>
-            <h1>Marque um lugar de verdade no mapa</h1>
+        <div className="side-card">
+          <div className="section-title">
+            <div>
+              <p className="eyebrow">Novo pico</p>
+              <h1>Marque um lugar de verdade no mapa</h1>
           </div>
           <button className="secondary-button" onClick={useCurrentLocation} type="button">
             {loadingLocation ? 'Lendo localizacao...' : 'Usar minha localizacao exata'}
           </button>
-        </div>
+          </div>
 
-        <form className="form-card" onSubmit={handleSubmit}>
+          <p className="muted-text">
+            Pessoas comuns podem sugerir novos picos com varias fotos e videos. O pico entra em
+            aprovacao quando precisar de revisao antes de ficar visivel para todo mundo.
+          </p>
+
+          <form className="form-card" onSubmit={handleSubmit}>
           <label>
             Nome do pico
             <input
@@ -232,13 +304,45 @@ export default function NewPicoPage() {
             <img className="image-preview" src={form.coverImageUrl} alt="Capa do pico" />
           ) : null}
 
+          <label>
+            Fotos e videos detalhados do pico
+            <input type="file" accept="image/*,video/*" multiple onChange={handleGalleryFilesChange} />
+          </label>
+
+          {galleryUploads.length ? (
+            <div className="upload-list">
+              {galleryUploads.map((item, index) => (
+                <div key={`${item.fileUrl}-${index}`} className="list-item static-item">
+                  <div>
+                    <strong>{item.title}</strong>
+                    <p>{item.mediaType === 'video' ? 'Video' : 'Foto'}</p>
+                  </div>
+                  <button
+                    className="ghost-button small-button"
+                    type="button"
+                    onClick={() =>
+                      setGalleryUploads((current) => current.filter((_, itemIndex) => itemIndex !== index))
+                    }
+                  >
+                    Remover
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
           {error ? <p className="error-text">{error}</p> : null}
+          {message ? <p className="success-text">{message}</p> : null}
 
           <button
             className="primary-button full-width"
-            disabled={saving || uploadingCover || !form.latitude || !form.longitude}
+            disabled={saving || uploadingCover || uploadingGallery || !form.latitude || !form.longitude}
           >
-            {saving ? 'Salvando...' : 'Criar pico'}
+            {saving
+              ? 'Salvando...'
+              : user.permissions?.includes('pico.approve')
+                ? 'Criar pico'
+                : 'Enviar pico para aprovacao'}
           </button>
         </form>
       </div>

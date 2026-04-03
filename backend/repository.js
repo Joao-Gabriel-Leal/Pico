@@ -25,6 +25,23 @@ function money(value) {
   }).format((Number(value) || 0) / 100)
 }
 
+function distanceBetweenLocations(origin, target) {
+  if (!origin || !target) return null
+
+  const toRad = (value) => (value * Math.PI) / 180
+  const earthRadius = 6371
+  const deltaLat = toRad(Number(target.latitude) - Number(origin.latitude))
+  const deltaLng = toRad(Number(target.longitude) - Number(origin.longitude))
+  const a =
+    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+    Math.cos(toRad(Number(origin.latitude))) *
+      Math.cos(toRad(Number(target.latitude))) *
+      Math.sin(deltaLng / 2) *
+      Math.sin(deltaLng / 2)
+
+  return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
 function normalizeString(value) {
   return String(value || '').trim()
 }
@@ -81,6 +98,16 @@ function mapSportRow(row, prefix = 'sport_') {
 }
 
 function mapUserViewRow(row) {
+  const roles = Array.isArray(row.roles)
+    ? row.roles.map((item) => ({
+        id: Number(item.id),
+        slug: item.slug,
+        name: item.name,
+      }))
+    : []
+
+  const permissionKeys = Array.isArray(row.permission_keys) ? row.permission_keys : []
+
   const favoriteSports = Array.isArray(row.favorite_sports)
     ? row.favorite_sports.map((item) => ({
         id: Number(item.id),
@@ -103,6 +130,8 @@ function mapUserViewRow(row) {
     location: buildLocationFromRow(row),
     favoriteSportIds,
     favoriteSports,
+    roles,
+    permissions: permissionKeys,
     createdPicoCount: Number(row.created_pico_count || 0),
     followerCount: Number(row.follower_count || 0),
     followingCount: Number(row.following_count || 0),
@@ -122,6 +151,7 @@ function mapPublicUser(user) {
     avatarUrl: user.avatarUrl,
     bio: user.bio,
     favoriteSports: user.favoriteSports,
+    roles: user.roles,
     createdPicoCount: user.createdPicoCount,
     followerCount: user.followerCount,
     followingCount: user.followingCount,
@@ -156,6 +186,7 @@ function mapMediaRow(row) {
     title: row.title,
     fileUrl: row.file_url,
     likesCount: Number(row.likes_count || 0),
+    commentsCount: Number(row.comments_count || 0),
     viewsCount: Number(row.views_count || 0),
     createdAt: new Date(row.created_at).toISOString(),
   }
@@ -172,6 +203,7 @@ function mapEventRow(row) {
     startsAt: new Date(row.starts_at).toISOString(),
     entryFeeCents: Number(row.entry_fee_cents || 0),
     prizePoolCents: Number(row.prize_pool_cents || 0),
+    approvalStatus: row.approval_status || 'approved',
     createdAt: new Date(row.created_at).toISOString(),
     sport: mapSportRow(row),
     entryFeeLabel: money(row.entry_fee_cents),
@@ -200,6 +232,132 @@ async function getSports(client = { query }) {
     slug: row.slug,
     name: row.name,
   }))
+}
+
+async function getRoles(client = { query }) {
+  const { rows } = await client.query('select id, slug, name, description from role order by id')
+  return rows.map((row) => ({
+    id: Number(row.id),
+    slug: row.slug,
+    name: row.name,
+    description: row.description || '',
+  }))
+}
+
+async function getUserRoleRows(client, userId) {
+  const { rows } = await client.query(
+    `
+      select role.id, role.slug, role.name
+      from user_role
+      join role on role.id = user_role.role_id
+      where user_role.user_id = $1
+      order by role.id
+    `,
+    [userId],
+  )
+
+  return rows.map((row) => ({
+    id: Number(row.id),
+    slug: row.slug,
+    name: row.name,
+  }))
+}
+
+async function getUserPermissionKeys(client, userId) {
+  const { rows } = await client.query(
+    `
+      select distinct permission.key
+      from user_role
+      join role_permission on role_permission.role_id = user_role.role_id
+      join permission on permission.id = role_permission.permission_id
+      where user_role.user_id = $1
+      order by permission.key
+    `,
+    [userId],
+  )
+
+  return rows.map((row) => row.key)
+}
+
+async function ensureRoleBySlug(client, slug) {
+  const { rows } = await client.query('select id from role where slug = $1', [slug])
+  if (!rows.length) {
+    throw new Error(`Role ${slug} ainda nao foi cadastrada.`)
+  }
+  return Number(rows[0].id)
+}
+
+async function ensureUserBaseRoles(client, userId) {
+  const userRoleRows = await getUserRoleRows(client, userId)
+  if (userRoleRows.length) return userRoleRows
+
+  const roleId = await ensureRoleBySlug(client, 'usuario')
+  await client.query(
+    `
+      insert into user_role (user_id, role_id, granted_by)
+      values ($1, $2, $1)
+      on conflict do nothing
+    `,
+    [userId, roleId],
+  )
+
+  return getUserRoleRows(client, userId)
+}
+
+async function ensureBootstrapAdmin(client, userId) {
+  const { rows } = await client.query(
+    `
+      select 1
+      from user_role
+      join role on role.id = user_role.role_id
+      where role.slug = 'admin'
+      limit 1
+    `,
+  )
+
+  if (rows.length) return
+
+  const adminRoleId = await ensureRoleBySlug(client, 'admin')
+  await client.query(
+    `
+      insert into user_role (user_id, role_id, granted_by)
+      values ($1, $2, $1)
+      on conflict do nothing
+    `,
+    [userId, adminRoleId],
+  )
+}
+
+async function ensureUserAccessState(client, userId) {
+  await ensureUserBaseRoles(client, userId)
+  await ensureBootstrapAdmin(client, userId)
+}
+
+function hasPermission(permissionKeys, permissionKey) {
+  return Array.isArray(permissionKeys) && permissionKeys.includes(permissionKey)
+}
+
+function canApprovePicos(permissionKeys) {
+  return hasPermission(permissionKeys, 'pico.approve') || hasPermission(permissionKeys, 'pico.manage.any')
+}
+
+function canApproveEvents(permissionKeys) {
+  return hasPermission(permissionKeys, 'event.approve') || hasPermission(permissionKeys, 'event.manage.any')
+}
+
+async function getUserLocationById(client, userId) {
+  if (!userId) return null
+
+  const { rows } = await client.query(
+    `
+      select latitude, longitude, location_accuracy
+      from app_user
+      where id = $1
+    `,
+    [userId],
+  )
+
+  return rows[0] ? buildLocationFromRow(rows[0]) : null
 }
 
 async function getUserIdByToken(client, token) {
@@ -237,6 +395,8 @@ async function getUserViewById(client, userId, currentUserId = userId) {
           where follow_back.follower_id = app_user.id
             and follow_back.following_id = $2::uuid
         ) as follows_you,
+        coalesce(access_roles.roles, '[]'::json) as roles,
+        coalesce(access_permissions.permission_keys, '[]'::json) as permission_keys,
         coalesce(favorites.favorite_sports, '[]'::json) as favorite_sports,
         coalesce(favorites.favorite_sport_ids, '[]'::json) as favorite_sport_ids
       from app_user
@@ -261,6 +421,29 @@ async function getUserViewById(client, userId, currentUserId = userId) {
         from pico
         where created_by = app_user.id
       ) created_picos on true
+      left join lateral (
+        select json_agg(
+          json_build_object('id', role_rows.id, 'slug', role_rows.slug, 'name', role_rows.name)
+          order by role_rows.id
+        ) as roles
+        from (
+          select role.id, role.slug, role.name
+          from user_role
+          join role on role.id = user_role.role_id
+          where user_role.user_id = app_user.id
+          order by role.id
+        ) role_rows
+      ) access_roles on true
+      left join lateral (
+        select json_agg(permission_rows.permission_key order by permission_rows.permission_key) as permission_keys
+        from (
+          select distinct permission.key as permission_key
+          from user_role
+          join role_permission on role_permission.role_id = user_role.role_id
+          join permission on permission.id = role_permission.permission_id
+          where user_role.user_id = app_user.id
+        ) permission_rows
+      ) access_permissions on true
       left join lateral (
         select
           json_agg(
@@ -300,6 +483,9 @@ async function getPicoSummaryRowById(client, picoId, currentUserId = null) {
         pico.status_text,
         pico.condition_label,
         pico.cover_image_url,
+        pico.approval_status,
+        pico.approved_by,
+        pico.approved_at,
         pico.created_at,
         sport.id as sport_id,
         sport.slug as sport_slug,
@@ -365,7 +551,10 @@ async function buildPicoSummary(client, picoId, currentUserId = null) {
   const row = await getPicoSummaryRowById(client, picoId, currentUserId)
   if (!row) return null
 
-  const creator = await getPublicUserViewById(client, row.created_by, currentUserId)
+  const [creator, permissions] = await Promise.all([
+    getPublicUserViewById(client, row.created_by, currentUserId),
+    getPicoPermissionsForUser(client, picoId, currentUserId),
+  ])
   const sport = mapSportRow(row)
 
   return {
@@ -377,6 +566,7 @@ async function buildPicoSummary(client, picoId, currentUserId = null) {
     longitude: Number(row.longitude),
     statusText: row.status_text,
     conditionLabel: row.condition_label,
+    approvalStatus: row.approval_status || 'approved',
     sport,
     creator,
     mediaCount: Number(row.media_count || 0),
@@ -385,6 +575,7 @@ async function buildPicoSummary(client, picoId, currentUserId = null) {
     hasVoted: Boolean(row.has_voted),
     previewPhoto: row.preview_photo || '',
     coverImageUrl: row.cover_image_url || '',
+    permissions,
     activeCampaign: row.active_campaign_id
       ? {
           id: row.active_campaign_id,
@@ -407,6 +598,8 @@ function toCompactPico(summary) {
     slug: summary.slug,
     name: summary.name,
     sport: summary.sport,
+    latitude: summary.latitude,
+    longitude: summary.longitude,
     previewPhoto: summary.previewPhoto,
     conditionLabel: summary.conditionLabel,
     voteCount: summary.voteCount,
@@ -417,6 +610,283 @@ function toCompactPico(summary) {
 async function getPicoIdBySlug(client, slug) {
   const { rows } = await client.query('select id from pico where slug = $1', [slug])
   return rows[0]?.id || null
+}
+
+async function canViewPico(client, picoId, currentUserId = null) {
+  const summary = await getPicoSummaryRowById(client, picoId, currentUserId)
+  if (!summary) return false
+  if ((summary.approval_status || 'approved') === 'approved') return true
+  if (!currentUserId) return false
+  if (summary.created_by === currentUserId) return true
+
+  const permissionKeys = await getUserPermissionKeys(client, currentUserId)
+  if (canApprovePicos(permissionKeys)) return true
+  return isPicoAdmin(client, picoId, currentUserId)
+}
+
+async function isPicoAdmin(client, picoId, userId) {
+  if (!userId) return false
+
+  const { rows } = await client.query(
+    `
+      select 1
+      from pico_admin
+      where pico_id = $1
+        and user_id = $2
+    `,
+    [picoId, userId],
+  )
+
+  return Boolean(rows[0])
+}
+
+function emptyPicoPermissions() {
+  return {
+    isPicoAdmin: false,
+    canCreate: false,
+    canEdit: false,
+    canDelete: false,
+    canManageEvents: false,
+    canModerateContent: false,
+    canManageAdmins: false,
+    canApprovePico: false,
+    canApproveEvents: false,
+    canPost: false,
+  }
+}
+
+function emptyMediaPermissions() {
+  return {
+    canLike: false,
+    canComment: false,
+    canDelete: false,
+  }
+}
+
+async function getPicoPermissionsForUser(client, picoId, userId) {
+  if (!userId) return emptyPicoPermissions()
+
+  const [permissionKeys, picoAdminFlag] = await Promise.all([
+    getUserPermissionKeys(client, userId),
+    isPicoAdmin(client, picoId, userId),
+  ])
+
+  const assignedManage = picoAdminFlag && hasPermission(permissionKeys, 'pico.manage.assigned')
+  const assignedDelete = picoAdminFlag && hasPermission(permissionKeys, 'pico.delete.assigned')
+  const assignedEvents = picoAdminFlag && hasPermission(permissionKeys, 'event.manage.assigned')
+  const assignedModeration = picoAdminFlag && hasPermission(permissionKeys, 'media.moderate.assigned')
+  const assignedAdminManagement =
+    picoAdminFlag && hasPermission(permissionKeys, 'pico.admin.manage.assigned')
+
+  return {
+    isPicoAdmin: picoAdminFlag,
+    canCreate: hasPermission(permissionKeys, 'pico.create'),
+    canEdit: hasPermission(permissionKeys, 'pico.manage.any') || assignedManage,
+    canDelete: hasPermission(permissionKeys, 'pico.delete.any') || assignedDelete,
+    canManageEvents: hasPermission(permissionKeys, 'event.manage.any') || assignedEvents,
+    canModerateContent: hasPermission(permissionKeys, 'media.moderate.any') || assignedModeration,
+    canManageAdmins: hasPermission(permissionKeys, 'pico.admin.manage.any') || assignedAdminManagement,
+    canApprovePico: canApprovePicos(permissionKeys),
+    canApproveEvents: canApproveEvents(permissionKeys),
+    canPost: hasPermission(permissionKeys, 'feed.post'),
+  }
+}
+
+async function ensurePicoPermission(client, picoId, userId, permissionName, fallbackMessage) {
+  const permissions = await getPicoPermissionsForUser(client, picoId, userId)
+  if (!permissions[permissionName]) {
+    throw new Error(fallbackMessage)
+  }
+  return permissions
+}
+
+async function listPicoAdmins(client, picoId, currentUserId = null) {
+  const { rows } = await client.query(
+    `
+      select user_id
+      from pico_admin
+      where pico_id = $1
+      order by created_at asc
+    `,
+    [picoId],
+  )
+
+  const admins = (
+    await Promise.all(rows.map((row) => getPublicUserViewById(client, row.user_id, currentUserId)))
+  ).filter(Boolean)
+
+  return admins
+}
+
+async function listPicoVoters(client, picoId, currentUserId = null) {
+  const { rows } = await client.query(
+    `
+      select user_id
+      from pico_vote
+      where pico_id = $1
+      order by created_at desc
+      limit 24
+    `,
+    [picoId],
+  )
+
+  const people = (
+    await Promise.all(rows.map((row) => getPublicUserViewById(client, row.user_id, currentUserId)))
+  ).filter(Boolean)
+
+  return people
+}
+
+async function listMediaLikes(client, mediaId, currentUserId = null) {
+  const { rows } = await client.query(
+    `
+      select user_id
+      from pico_media_like
+      where media_id = $1
+      order by created_at desc
+      limit 12
+    `,
+    [mediaId],
+  )
+
+  const people = (
+    await Promise.all(rows.map((row) => getPublicUserViewById(client, row.user_id, currentUserId)))
+  ).filter(Boolean)
+
+  return people
+}
+
+async function listMediaComments(client, mediaId, currentUserId = null) {
+  const { rows } = await client.query(
+    `
+      select id, media_id, user_id, text_content, created_at
+      from pico_media_comment
+      where media_id = $1
+      order by created_at asc
+      limit 50
+    `,
+    [mediaId],
+  )
+
+  const uniqueUserIds = [...new Set(rows.map((row) => row.user_id))]
+  const authors = new Map()
+
+  await Promise.all(
+    uniqueUserIds.map(async (userId) => {
+      authors.set(userId, await getPublicUserViewById(client, userId, currentUserId))
+    }),
+  )
+
+  return rows.map((row) => ({
+    id: row.id,
+    mediaId: row.media_id,
+    userId: row.user_id,
+    text: row.text_content,
+    createdAt: new Date(row.created_at).toISOString(),
+    author: authors.get(row.user_id) || null,
+    isOwn: Boolean(currentUserId && row.user_id === currentUserId),
+  }))
+}
+
+async function getMediaRowById(client, mediaId) {
+  const { rows } = await client.query(
+    `
+      select
+        id,
+        pico_id,
+        user_id,
+        media_type,
+        title,
+        file_url,
+        likes_count,
+        comments_count,
+        views_count,
+        created_at
+      from pico_media
+      where id = $1
+    `,
+    [mediaId],
+  )
+
+  return rows[0] || null
+}
+
+async function getEventRowById(client, eventId) {
+  const { rows } = await client.query(
+    `
+      select
+        pico_event.id,
+        pico_event.pico_id,
+        pico_event.created_by,
+        pico_event.title,
+        pico_event.description,
+        pico_event.sport_id,
+        pico_event.starts_at,
+        pico_event.entry_fee_cents,
+        pico_event.prize_pool_cents,
+        pico_event.approval_status,
+        pico_event.created_at,
+        sport.id as sport_id,
+        sport.slug as sport_slug,
+        sport.name as sport_name
+      from pico_event
+      join sport on sport.id = pico_event.sport_id
+      where pico_event.id = $1
+    `,
+    [eventId],
+  )
+
+  return rows[0] || null
+}
+
+async function canViewEvent(client, eventId, currentUserId = null) {
+  const row = await getEventRowById(client, eventId)
+  if (!row) return false
+  if ((row.approval_status || 'approved') === 'approved') return true
+  if (!currentUserId) return false
+  if (row.created_by === currentUserId) return true
+
+  const permissionKeys = await getUserPermissionKeys(client, currentUserId)
+  if (canApproveEvents(permissionKeys)) return true
+  return isPicoAdmin(client, row.pico_id, currentUserId)
+}
+
+async function buildMediaDetail(client, row, currentUserId = null) {
+  const [author, picoPermissions, likedBy, comments, likedRows, permissionKeys] = await Promise.all([
+    getPublicUserViewById(client, row.user_id, currentUserId),
+    getPicoPermissionsForUser(client, row.pico_id, currentUserId),
+    listMediaLikes(client, row.id, currentUserId),
+    listMediaComments(client, row.id, currentUserId),
+    currentUserId
+      ? client.query(
+          `
+            select 1
+            from pico_media_like
+            where media_id = $1
+              and user_id = $2
+          `,
+          [row.id, currentUserId],
+        )
+      : Promise.resolve({ rows: [] }),
+    currentUserId ? getUserPermissionKeys(client, currentUserId) : Promise.resolve([]),
+  ])
+
+  const isOwn = Boolean(currentUserId && row.user_id === currentUserId)
+  const canDelete = picoPermissions.canModerateContent || isOwn
+
+  return {
+    ...mapMediaRow(row),
+    author,
+    likedBy,
+    comments,
+    isLiked: Boolean(likedRows.rows[0]),
+    permissions: {
+      ...emptyMediaPermissions(),
+      canLike: hasPermission(permissionKeys, 'media.react'),
+      canComment: hasPermission(permissionKeys, 'media.comment'),
+      canDelete,
+    },
+  }
 }
 
 async function listPicoMedia(client, picoId) {
@@ -430,6 +900,7 @@ async function listPicoMedia(client, picoId) {
         title,
         file_url,
         likes_count,
+        comments_count,
         views_count,
         created_at
       from pico_media
@@ -439,7 +910,7 @@ async function listPicoMedia(client, picoId) {
     [picoId],
   )
 
-  return rows.map(mapMediaRow)
+  return rows
 }
 
 async function listPicoEvents(client, picoId) {
@@ -455,6 +926,7 @@ async function listPicoEvents(client, picoId) {
         pico_event.starts_at,
         pico_event.entry_fee_cents,
         pico_event.prize_pool_cents,
+        pico_event.approval_status,
         pico_event.created_at,
         sport.id as sport_id,
         sport.slug as sport_slug,
@@ -497,11 +969,25 @@ async function buildPicoDetail(client, picoId, currentUserId = null) {
   const summary = await buildPicoSummary(client, picoId, currentUserId)
   if (!summary) return null
 
-  const [media, events, campaigns] = await Promise.all([
+  const [mediaRows, eventRows, campaigns, admins, likedBy, permissions] = await Promise.all([
     listPicoMedia(client, picoId),
     listPicoEvents(client, picoId),
     listPicoCampaigns(client, picoId),
+    listPicoAdmins(client, picoId, currentUserId),
+    listPicoVoters(client, picoId, currentUserId),
+    getPicoPermissionsForUser(client, picoId, currentUserId),
   ])
+
+  const media = (
+    await Promise.all(mediaRows.map((row) => buildMediaDetail(client, row, currentUserId)))
+  ).filter(Boolean)
+
+  const events = eventRows.filter((item) => {
+    if (item.approvalStatus === 'approved') return true
+    if (!currentUserId) return false
+    if (item.createdBy === currentUserId) return true
+    return permissions.canManageEvents || permissions.canApproveEvents
+  })
 
   const topVideos = [...media]
     .filter((item) => item.mediaType === 'video')
@@ -513,27 +999,23 @@ async function buildPicoDetail(client, picoId, currentUserId = null) {
     media,
     events,
     campaigns,
+    admins,
+    likedBy,
+    permissions,
     topVideos,
   }
 }
 
 async function buildFeedItem(client, row, currentUserId = null) {
-  const [author, picoSummary] = await Promise.all([
-    getPublicUserViewById(client, row.user_id, currentUserId),
+  const [media, picoSummary] = await Promise.all([
+    buildMediaDetail(client, row, currentUserId),
     buildPicoSummary(client, row.pico_id, currentUserId),
   ])
 
   if (!picoSummary) return null
 
   return {
-    id: row.id,
-    mediaType: row.media_type,
-    title: row.title,
-    fileUrl: row.file_url,
-    likesCount: Number(row.likes_count || 0),
-    viewsCount: Number(row.views_count || 0),
-    createdAt: new Date(row.created_at).toISOString(),
-    author,
+    ...media,
     pico: toCompactPico(picoSummary),
   }
 }
@@ -556,6 +1038,7 @@ async function buildEventSummary(client, row, currentUserId = null) {
     startsAt: new Date(row.starts_at).toISOString(),
     entryFeeCents: Number(row.entry_fee_cents || 0),
     prizePoolCents: Number(row.prize_pool_cents || 0),
+    approvalStatus: row.approval_status || 'approved',
     createdAt: new Date(row.created_at).toISOString(),
     sport: mapSportRow(row),
     pico: toCompactPico(picoSummary),
@@ -572,8 +1055,10 @@ async function buildConversationSummary(client, conversationId, currentUserId) {
         direct_conversation.id,
         direct_conversation.created_at,
         direct_conversation.updated_at,
+        viewer_participant.last_read_at as viewer_last_read_at,
         coalesce(json_agg(direct_conversation_participant.user_id order by direct_conversation_participant.user_id), '[]'::json) as participant_ids,
         coalesce(message_count.total, 0)::int as messages_count,
+        coalesce(unread_count.total, 0)::int as unread_count,
         last_message.id as last_message_id,
         last_message.sender_id as last_message_sender_id,
         last_message.text_content as last_message_text,
@@ -581,11 +1066,21 @@ async function buildConversationSummary(client, conversationId, currentUserId) {
       from direct_conversation
       join direct_conversation_participant
         on direct_conversation_participant.conversation_id = direct_conversation.id
+      join direct_conversation_participant viewer_participant
+        on viewer_participant.conversation_id = direct_conversation.id
+       and viewer_participant.user_id = $2
       left join lateral (
         select count(*)::int as total
         from direct_message
         where direct_message.conversation_id = direct_conversation.id
       ) message_count on true
+      left join lateral (
+        select count(*)::int as total
+        from direct_message
+        where direct_message.conversation_id = direct_conversation.id
+          and direct_message.sender_id <> $2
+          and direct_message.created_at > viewer_participant.last_read_at
+      ) unread_count on true
       left join lateral (
         select id, sender_id, text_content, created_at
         from direct_message
@@ -598,13 +1093,15 @@ async function buildConversationSummary(client, conversationId, currentUserId) {
         direct_conversation.id,
         direct_conversation.created_at,
         direct_conversation.updated_at,
+        viewer_participant.last_read_at,
         message_count.total,
+        unread_count.total,
         last_message.id,
         last_message.sender_id,
         last_message.text_content,
         last_message.created_at
     `,
-    [conversationId],
+    [conversationId, currentUserId],
   )
 
   const row = rows[0]
@@ -628,7 +1125,9 @@ async function buildConversationSummary(client, conversationId, currentUserId) {
     participants: participants.filter(Boolean),
     otherUser,
     updatedAt: new Date(row.updated_at).toISOString(),
+    lastReadAt: row.viewer_last_read_at ? new Date(row.viewer_last_read_at).toISOString() : null,
     messagesCount: Number(row.messages_count || 0),
+    unreadCount: Number(row.unread_count || 0),
     lastMessage: row.last_message_id
       ? {
           id: row.last_message_id,
@@ -695,6 +1194,18 @@ async function ensureConversationMembership(client, conversationId, userId) {
   return Boolean(rows[0])
 }
 
+async function markConversationRead(client, conversationId, userId) {
+  await client.query(
+    `
+      update direct_conversation_participant
+      set last_read_at = now()
+      where conversation_id = $1
+        and user_id = $2
+    `,
+    [conversationId, userId],
+  )
+}
+
 async function generateUniquePicoSlug(client, name) {
   const baseSlug = slugify(name) || 'pico'
   let slug = baseSlug
@@ -720,13 +1231,19 @@ export async function createRepository() {
     async getReferenceData() {
       return {
         sports: await getSports(),
+        roles: await getRoles(),
       }
     },
 
     async getBootstrap(token) {
       const sports = await getSports()
       const currentUserId = token ? await getUserIdByToken({ query }, token) : null
-      const currentUser = currentUserId ? await getUserViewById({ query }, currentUserId, currentUserId) : null
+      const currentUser = currentUserId
+        ? await withTransaction(async (client) => {
+            await ensureUserAccessState(client, currentUserId)
+            return getUserViewById(client, currentUserId, currentUserId)
+          })
+        : null
       const { rows } = await query(
         `
           select id
@@ -743,6 +1260,7 @@ export async function createRepository() {
       return {
         appName: process.env.APP_NAME || 'PicoLiga',
         sports,
+        roles: await getRoles(),
         currentUser,
         featuredPicos,
       }
@@ -750,11 +1268,34 @@ export async function createRepository() {
 
     async listPicos(filters = {}, currentUserId = null) {
       const params = []
-      let whereClause = ''
+      const whereClauses = []
+      const permissionKeys = currentUserId ? await getUserPermissionKeys({ query }, currentUserId) : []
 
       if (filters.sportSlug && filters.sportSlug !== 'all') {
         params.push(filters.sportSlug)
-        whereClause = `where sport.slug = $${params.length}`
+        whereClauses.push(`sport.slug = $${params.length}`)
+      }
+
+      const north = safeNumber(filters.north)
+      const south = safeNumber(filters.south)
+      const east = safeNumber(filters.east)
+      const west = safeNumber(filters.west)
+
+      if ([north, south, east, west].every((value) => value !== null)) {
+        params.push(south, north)
+        const latitudeClause = `pico.latitude between $${params.length - 1} and $${params.length}`
+
+        if (east >= west) {
+          params.push(west, east)
+          whereClauses.push(
+            `${latitudeClause} and pico.longitude between $${params.length - 1} and $${params.length}`,
+          )
+        } else {
+          params.push(west, east)
+          whereClauses.push(
+            `${latitudeClause} and (pico.longitude >= $${params.length - 1} or pico.longitude <= $${params.length})`,
+          )
+        }
       }
 
       const { rows } = await query(
@@ -762,7 +1303,7 @@ export async function createRepository() {
           select pico.id
           from pico
           join sport on sport.id = pico.primary_sport_id
-          ${whereClause}
+          ${whereClauses.length ? `where ${whereClauses.join(' and ')}` : ''}
           order by pico.created_at desc
         `,
         params,
@@ -772,12 +1313,22 @@ export async function createRepository() {
         await Promise.all(rows.map((row) => buildPicoSummary({ query }, row.id, currentUserId)))
       ).filter(Boolean)
 
-      return items.sort((left, right) => right.voteCount - left.voteCount || left.name.localeCompare(right.name))
+      return items
+        .filter((item) => {
+          if (item.approvalStatus === 'approved') return true
+          if (!currentUserId) return false
+          if (item.creator?.id === currentUserId) return true
+          if (item.permissions?.isPicoAdmin) return true
+          return canApprovePicos(permissionKeys)
+        })
+        .sort((left, right) => right.voteCount - left.voteCount || left.name.localeCompare(right.name))
     },
 
     async getPicoBySlug(slug, currentUserId = null) {
       const picoId = await getPicoIdBySlug({ query }, slug)
-      return picoId ? buildPicoDetail({ query }, picoId, currentUserId) : null
+      if (!picoId) return null
+      const visible = await canViewPico({ query }, picoId, currentUserId)
+      return visible ? buildPicoDetail({ query }, picoId, currentUserId) : null
     },
 
     async listEvents(currentUserId = null) {
@@ -793,6 +1344,7 @@ export async function createRepository() {
             pico_event.starts_at,
             pico_event.entry_fee_cents,
             pico_event.prize_pool_cents,
+            pico_event.approval_status,
             pico_event.created_at,
             sport.id as sport_id,
             sport.slug as sport_slug,
@@ -803,21 +1355,82 @@ export async function createRepository() {
         `,
       )
 
+      const viewerLocation = await getUserLocationById({ query }, currentUserId)
+      const permissionKeys = currentUserId ? await getUserPermissionKeys({ query }, currentUserId) : []
       const items = (
         await Promise.all(rows.map((row) => buildEventSummary({ query }, row, currentUserId)))
       ).filter(Boolean)
 
-      return items.sort((left, right) => left.startsAt.localeCompare(right.startsAt))
+      return items
+        .filter((item) => {
+          if (item.approvalStatus === 'approved') return true
+          if (!currentUserId) return false
+          if (item.createdBy === currentUserId) return true
+          if (item.pico?.permissions?.isPicoAdmin) return true
+          return canApproveEvents(permissionKeys)
+        })
+        .map((item) => {
+          const distanceKm = viewerLocation
+            ? distanceBetweenLocations(viewerLocation, {
+                latitude: item.pico.latitude,
+                longitude: item.pico.longitude,
+              })
+            : null
+
+          return {
+            ...item,
+            distanceKm,
+            distanceLabel: distanceKm === null ? '' : `${distanceKm.toFixed(1)} km`,
+          }
+        })
+        .sort((left, right) => {
+          if (left.distanceKm === null && right.distanceKm === null) {
+            return left.startsAt.localeCompare(right.startsAt)
+          }
+          if (left.distanceKm === null) return 1
+          if (right.distanceKm === null) return -1
+          if (left.distanceKm !== right.distanceKm) return left.distanceKm - right.distanceKm
+          return left.startsAt.localeCompare(right.startsAt)
+        })
+    },
+
+    async getEventById(eventId, currentUserId = null) {
+      const visible = await canViewEvent({ query }, eventId, currentUserId)
+      if (!visible) return null
+
+      const row = await getEventRowById({ query }, eventId)
+      if (!row) return null
+
+      const viewerLocation = await getUserLocationById({ query }, currentUserId)
+      const item = await buildEventSummary({ query }, row, currentUserId)
+      if (!item) return null
+
+      const distanceKm = viewerLocation
+        ? distanceBetweenLocations(viewerLocation, {
+            latitude: item.pico.latitude,
+            longitude: item.pico.longitude,
+          })
+        : null
+
+      return {
+        ...item,
+        distanceKm,
+        distanceLabel: distanceKm === null ? '' : `${distanceKm.toFixed(1)} km`,
+      }
     },
 
     async listFeed(filters = {}, currentUserId = null) {
       const params = []
       let whereClause = "where file_url <> ''"
+      const limit = Math.min(Math.max(Number(filters.limit) || 10, 1), 20)
+      const offset = Math.max(Number(filters.offset) || 0, 0)
 
       if (filters.authorId) {
         params.push(filters.authorId)
         whereClause += ` and user_id = $${params.length}`
       }
+
+      params.push(limit, offset)
 
       const { rows } = await query(
         `
@@ -829,11 +1442,14 @@ export async function createRepository() {
             title,
             file_url,
             likes_count,
+            comments_count,
             views_count,
             created_at
           from pico_media
           ${whereClause}
           order by created_at desc
+          limit $${params.length - 1}
+          offset $${params.length}
         `,
         params,
       )
@@ -842,7 +1458,11 @@ export async function createRepository() {
         await Promise.all(rows.map((row) => buildFeedItem({ query }, row, currentUserId)))
       ).filter(Boolean)
 
-      return items
+      return {
+        items,
+        hasMore: items.length === limit,
+        nextOffset: offset + items.length,
+      }
     },
 
     async listPeople(currentUserId) {
@@ -864,6 +1484,233 @@ export async function createRepository() {
       return people.sort((left, right) => {
         if (left.isFollowing !== right.isFollowing) return left.isFollowing ? -1 : 1
         return left.displayName.localeCompare(right.displayName)
+      })
+    },
+
+    async listModerationQueue(userId) {
+      const permissionKeys = await getUserPermissionKeys({ query }, userId)
+      const canReviewPicos = canApprovePicos(permissionKeys)
+      const canReviewEvents = canApproveEvents(permissionKeys)
+
+      if (!canReviewPicos && !canReviewEvents) {
+        throw new Error('Seu perfil nao pode moderar picos ou eventos.')
+      }
+
+      const [pendingPicoRows, pendingEventRows] = await Promise.all([
+        canReviewPicos
+          ? query(
+              `
+                select id
+                from pico
+                where approval_status = 'pending'
+                order by created_at asc
+              `,
+            )
+          : Promise.resolve({ rows: [] }),
+        canReviewEvents
+          ? query(
+              `
+                select id
+                from pico_event
+                where approval_status = 'pending'
+                order by created_at asc
+              `,
+            )
+          : Promise.resolve({ rows: [] }),
+      ])
+
+      const [picos, events] = await Promise.all([
+        Promise.all(pendingPicoRows.rows.map((row) => buildPicoDetail({ query }, row.id, userId))),
+        Promise.all(
+          pendingEventRows.rows.map(async (row) => {
+            const eventRow = await getEventRowById({ query }, row.id)
+            return eventRow ? buildEventSummary({ query }, eventRow, userId) : null
+          }),
+        ),
+      ])
+
+      return {
+        picos: picos.filter(Boolean),
+        events: events.filter(Boolean),
+      }
+    },
+
+    async approvePico(userId, slug) {
+      return withTransaction(async (client) => {
+        const permissionKeys = await getUserPermissionKeys(client, userId)
+        if (!canApprovePicos(permissionKeys)) {
+          throw new Error('Voce nao pode aprovar picos.')
+        }
+
+        const picoId = await getPicoIdBySlug(client, slug)
+        if (!picoId) {
+          throw new Error('Pico nao encontrado.')
+        }
+
+        await client.query(
+          `
+            update pico
+            set approval_status = 'approved',
+                approved_by = $2,
+                approved_at = now(),
+                updated_at = now()
+            where id = $1
+          `,
+          [picoId, userId],
+        )
+
+        return buildPicoDetail(client, picoId, userId)
+      })
+    },
+
+    async rejectPico(userId, slug) {
+      return withTransaction(async (client) => {
+        const permissionKeys = await getUserPermissionKeys(client, userId)
+        if (!canApprovePicos(permissionKeys)) {
+          throw new Error('Voce nao pode rejeitar picos.')
+        }
+
+        const picoId = await getPicoIdBySlug(client, slug)
+        if (!picoId) {
+          throw new Error('Pico nao encontrado.')
+        }
+
+        await client.query(
+          `
+            update pico
+            set approval_status = 'rejected',
+                approved_by = $2,
+                approved_at = now(),
+                updated_at = now()
+            where id = $1
+          `,
+          [picoId, userId],
+        )
+
+        return buildPicoDetail(client, picoId, userId)
+      })
+    },
+
+    async approveEvent(userId, eventId) {
+      return withTransaction(async (client) => {
+        const permissionKeys = await getUserPermissionKeys(client, userId)
+        if (!canApproveEvents(permissionKeys)) {
+          throw new Error('Voce nao pode aprovar eventos.')
+        }
+
+        const row = await getEventRowById(client, eventId)
+        if (!row) {
+          throw new Error('Evento nao encontrado.')
+        }
+
+        await client.query(
+          `
+            update pico_event
+            set approval_status = 'approved',
+                approved_by = $2,
+                approved_at = now(),
+                updated_at = now()
+            where id = $1
+          `,
+          [eventId, userId],
+        )
+
+        return buildEventSummary(client, { ...row, approval_status: 'approved' }, userId)
+      })
+    },
+
+    async rejectEvent(userId, eventId) {
+      return withTransaction(async (client) => {
+        const permissionKeys = await getUserPermissionKeys(client, userId)
+        if (!canApproveEvents(permissionKeys)) {
+          throw new Error('Voce nao pode rejeitar eventos.')
+        }
+
+        const row = await getEventRowById(client, eventId)
+        if (!row) {
+          throw new Error('Evento nao encontrado.')
+        }
+
+        await client.query(
+          `
+            update pico_event
+            set approval_status = 'rejected',
+                approved_by = $2,
+                approved_at = now(),
+                updated_at = now()
+            where id = $1
+          `,
+          [eventId, userId],
+        )
+
+        return buildEventSummary(client, { ...row, approval_status: 'rejected' }, userId)
+      })
+    },
+
+    async assignRole(currentUserId, targetUserId, roleSlug) {
+      return withTransaction(async (client) => {
+        const permissionKeys = await getUserPermissionKeys(client, currentUserId)
+        if (!hasPermission(permissionKeys, 'role.assign')) {
+          throw new Error('Voce nao pode gerenciar roles de usuarios.')
+        }
+
+        const { rows: targetRows } = await client.query('select id from app_user where id = $1', [targetUserId])
+        if (!targetRows.length) {
+          throw new Error('Usuario nao encontrado.')
+        }
+
+        const roleId = await ensureRoleBySlug(client, roleSlug)
+        await client.query(
+          `
+            insert into user_role (user_id, role_id, granted_by)
+            values ($1, $2, $3)
+            on conflict do nothing
+          `,
+          [targetUserId, roleId, currentUserId],
+        )
+
+        return getPublicUserViewById(client, targetUserId, currentUserId)
+      })
+    },
+
+    async removeRole(currentUserId, targetUserId, roleSlug) {
+      return withTransaction(async (client) => {
+        const permissionKeys = await getUserPermissionKeys(client, currentUserId)
+        if (!hasPermission(permissionKeys, 'role.assign')) {
+          throw new Error('Voce nao pode gerenciar roles de usuarios.')
+        }
+
+        if (roleSlug === 'admin') {
+          const { rows } = await client.query(
+            `
+              select count(*)::int as total
+              from user_role
+              join role on role.id = user_role.role_id
+              where role.slug = 'admin'
+            `,
+          )
+
+          const totalAdmins = Number(rows[0]?.total || 0)
+          if (totalAdmins <= 1) {
+            throw new Error('O sistema precisa manter pelo menos um administrador.')
+          }
+        }
+
+        await client.query(
+          `
+            delete from user_role
+            where user_id = $1
+              and role_id = (
+                select id
+                from role
+                where slug = $2
+              )
+          `,
+          [targetUserId, roleSlug],
+        )
+
+        await ensureUserBaseRoles(client, targetUserId)
+        return getPublicUserViewById(client, targetUserId, currentUserId)
       })
     },
 
@@ -921,6 +1768,11 @@ export async function createRepository() {
     },
 
     async listDirectConversations(userId) {
+      const permissionKeys = await getUserPermissionKeys({ query }, userId)
+      if (!hasPermission(permissionKeys, 'dm.use')) {
+        throw new Error('Seu perfil nao pode usar mensagens diretas.')
+      }
+
       const { rows } = await query(
         `
           select direct_conversation.id
@@ -941,9 +1793,12 @@ export async function createRepository() {
     },
 
     async getDirectConversation(userId, conversationId) {
-      const isMember = await ensureConversationMembership({ query }, conversationId, userId)
-      if (!isMember) return null
-      return buildConversationDetail({ query }, conversationId, userId)
+      return withTransaction(async (client) => {
+        const isMember = await ensureConversationMembership(client, conversationId, userId)
+        if (!isMember) return null
+        await markConversationRead(client, conversationId, userId)
+        return buildConversationDetail(client, conversationId, userId)
+      })
     },
 
     async openDirectConversation(userId, recipientUserId) {
@@ -952,6 +1807,11 @@ export async function createRepository() {
       }
 
       return withTransaction(async (client) => {
+        const permissionKeys = await getUserPermissionKeys(client, userId)
+        if (!hasPermission(permissionKeys, 'dm.use')) {
+          throw new Error('Seu perfil nao pode usar mensagens diretas.')
+        }
+
         const { rows: recipientRows } = await client.query('select id from app_user where id = $1', [recipientUserId])
         if (!recipientRows.length) {
           throw new Error('Contato nao encontrado.')
@@ -974,6 +1834,7 @@ export async function createRepository() {
 
         const existingConversationId = existingRows[0]?.id
         if (existingConversationId) {
+          await markConversationRead(client, existingConversationId, userId)
           return buildConversationDetail(client, existingConversationId, userId)
         }
 
@@ -993,6 +1854,7 @@ export async function createRepository() {
           [conversationId, userId, recipientUserId],
         )
 
+        await markConversationRead(client, conversationId, userId)
         return buildConversationDetail(client, conversationId, userId)
       })
     },
@@ -1004,6 +1866,11 @@ export async function createRepository() {
       }
 
       return withTransaction(async (client) => {
+        const permissionKeys = await getUserPermissionKeys(client, userId)
+        if (!hasPermission(permissionKeys, 'dm.use')) {
+          throw new Error('Seu perfil nao pode usar mensagens diretas.')
+        }
+
         const isMember = await ensureConversationMembership(client, conversationId, userId)
         if (!isMember) {
           throw new Error('Conversa nao encontrada.')
@@ -1027,6 +1894,19 @@ export async function createRepository() {
           [conversationId, rows[0].created_at],
         )
 
+        await markConversationRead(client, conversationId, userId)
+        return buildConversationDetail(client, conversationId, userId)
+      })
+    },
+
+    async markDirectConversationRead(userId, conversationId) {
+      return withTransaction(async (client) => {
+        const isMember = await ensureConversationMembership(client, conversationId, userId)
+        if (!isMember) {
+          throw new Error('Conversa nao encontrada.')
+        }
+
+        await markConversationRead(client, conversationId, userId)
         return buildConversationDetail(client, conversationId, userId)
       })
     },
@@ -1034,7 +1914,10 @@ export async function createRepository() {
     async getUserByToken(token) {
       const userId = await getUserIdByToken({ query }, token)
       if (!userId) return null
-      return getUserViewById({ query }, userId, userId)
+      return withTransaction(async (client) => {
+        await ensureUserAccessState(client, userId)
+        return getUserViewById(client, userId, userId)
+      })
     },
 
     async registerUser(payload) {
@@ -1079,6 +1962,8 @@ export async function createRepository() {
         )
 
         const userId = rows[0].id
+
+        await ensureUserAccessState(client, userId)
 
         await client.query(
           `
@@ -1135,19 +2020,23 @@ export async function createRepository() {
         throw new Error('Email ou senha invalidos.')
       }
 
-      const token = `session_${randomUUID()}`
-      await query(
-        `
-          insert into auth_session (token, user_id)
-          values ($1, $2)
-        `,
-        [token, user.id],
-      )
+      return withTransaction(async (client) => {
+        await ensureUserAccessState(client, user.id)
 
-      return {
-        token,
-        user: await getUserViewById({ query }, user.id, user.id),
-      }
+        const token = `session_${randomUUID()}`
+        await client.query(
+          `
+            insert into auth_session (token, user_id)
+            values ($1, $2)
+          `,
+          [token, user.id],
+        )
+
+        return {
+          token,
+          user: await getUserViewById(client, user.id, user.id),
+        }
+      })
     },
 
     async updateUser(userId, payload) {
@@ -1214,6 +2103,12 @@ export async function createRepository() {
 
     async createPico(userId, payload) {
       return withTransaction(async (client) => {
+        const permissionKeys = await getUserPermissionKeys(client, userId)
+        if (!hasPermission(permissionKeys, 'pico.create')) {
+          throw new Error('Seu perfil nao pode criar novos picos.')
+        }
+        const approvalStatus = canApprovePicos(permissionKeys) ? 'approved' : 'pending'
+
         const primarySportId = Number(payload.primarySportId)
         const { rows: sportRows } = await client.query('select id from sport where id = $1', [primarySportId])
 
@@ -1234,9 +2129,12 @@ export async function createRepository() {
               longitude,
               status_text,
               condition_label,
-              cover_image_url
+              cover_image_url,
+              approval_status,
+              approved_by,
+              approved_at
             )
-            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             returning id
           `,
           [
@@ -1250,10 +2148,171 @@ export async function createRepository() {
             normalizeString(payload.statusText) || 'Pico novo marcado agora',
             normalizeString(payload.conditionLabel) || 'novo',
             normalizeString(payload.coverImageUrl),
+            approvalStatus,
+            approvalStatus === 'approved' ? userId : null,
+            approvalStatus === 'approved' ? new Date().toISOString() : null,
           ],
         )
 
+        await client.query(
+          `
+            insert into pico_admin (pico_id, user_id, granted_by)
+            values ($1, $2, $2)
+            on conflict do nothing
+          `,
+          [rows[0].id, userId],
+        )
+
         return buildPicoDetail(client, rows[0].id, userId)
+      })
+    },
+
+    async updatePico(userId, slug, payload) {
+      return withTransaction(async (client) => {
+        const picoId = await getPicoIdBySlug(client, slug)
+        if (!picoId) {
+          throw new Error('Pico nao encontrado.')
+        }
+
+        await ensurePicoPermission(
+          client,
+          picoId,
+          userId,
+          'canEdit',
+          'Voce nao pode editar esse pico.',
+        )
+
+        const primarySportId = Number(payload.primarySportId)
+        const { rows: sportRows } = await client.query('select id from sport where id = $1', [primarySportId])
+        if (!sportRows.length) {
+          throw new Error('Selecione um esporte principal valido.')
+        }
+
+        await client.query(
+          `
+            update pico
+            set
+              primary_sport_id = $2,
+              name = $3,
+              description = $4,
+              latitude = $5,
+              longitude = $6,
+              status_text = $7,
+              condition_label = $8,
+              cover_image_url = $9,
+              updated_at = now()
+            where id = $1
+          `,
+          [
+            picoId,
+            primarySportId,
+            normalizeString(payload.name),
+            normalizeString(payload.description),
+            Number(payload.latitude),
+            Number(payload.longitude),
+            normalizeString(payload.statusText) || 'Pico atualizado',
+            normalizeString(payload.conditionLabel) || 'ativo',
+            normalizeString(payload.coverImageUrl),
+          ],
+        )
+
+        return buildPicoDetail(client, picoId, userId)
+      })
+    },
+
+    async deletePico(userId, slug) {
+      return withTransaction(async (client) => {
+        const picoId = await getPicoIdBySlug(client, slug)
+        if (!picoId) {
+          throw new Error('Pico nao encontrado.')
+        }
+
+        await ensurePicoPermission(
+          client,
+          picoId,
+          userId,
+          'canDelete',
+          'Voce nao pode remover esse pico.',
+        )
+
+        await client.query('delete from pico where id = $1', [picoId])
+        return { deleted: true, slug }
+      })
+    },
+
+    async addPicoAdmin(userId, slug, targetUserId) {
+      return withTransaction(async (client) => {
+        const picoId = await getPicoIdBySlug(client, slug)
+        if (!picoId) {
+          throw new Error('Pico nao encontrado.')
+        }
+
+        await ensurePicoPermission(
+          client,
+          picoId,
+          userId,
+          'canManageAdmins',
+          'Voce nao pode gerenciar administradores desse pico.',
+        )
+
+        const { rows: targetRows } = await client.query('select id from app_user where id = $1', [targetUserId])
+        if (!targetRows.length) {
+          throw new Error('Usuario nao encontrado.')
+        }
+
+        await client.query(
+          `
+            insert into pico_admin (pico_id, user_id, granted_by)
+            values ($1, $2, $3)
+            on conflict do nothing
+          `,
+          [picoId, targetUserId, userId],
+        )
+
+        return buildPicoDetail(client, picoId, userId)
+      })
+    },
+
+    async removePicoAdmin(userId, slug, targetUserId) {
+      return withTransaction(async (client) => {
+        const picoId = await getPicoIdBySlug(client, slug)
+        if (!picoId) {
+          throw new Error('Pico nao encontrado.')
+        }
+
+        const permissions = await ensurePicoPermission(
+          client,
+          picoId,
+          userId,
+          'canManageAdmins',
+          'Voce nao pode gerenciar administradores desse pico.',
+        )
+
+        if (permissions.isPicoAdmin && targetUserId === userId) {
+          const { rows } = await client.query(
+            `
+              select count(*)::int as total
+              from pico_admin
+              where pico_id = $1
+            `,
+            [picoId],
+          )
+
+          if (Number(rows[0]?.total || 0) <= 1) {
+            throw new Error('Esse pico precisa ter pelo menos um administrador.')
+          }
+        }
+
+        await client.query(
+          `
+            delete from pico_admin
+            where pico_id = $1
+              and user_id = $2
+          `,
+          [picoId, targetUserId],
+        )
+
+        return buildPicoDetail(client, picoId, userId)
       })
     },
 
@@ -1263,6 +2322,14 @@ export async function createRepository() {
         if (!picoId) {
           throw new Error('Pico nao encontrado.')
         }
+
+        await ensurePicoPermission(
+          client,
+          picoId,
+          userId,
+          'canManageEvents',
+          'Voce nao pode abrir vaquinha nesse pico.',
+        )
 
         const { rows: activeCampaignRows } = await client.query(
           `
@@ -1356,6 +2423,17 @@ export async function createRepository() {
         if (!picoId) {
           throw new Error('Pico nao encontrado.')
         }
+        const picoPermissions = await getPicoPermissionsForUser(client, picoId, userId)
+        const permissionKeys = await getUserPermissionKeys(client, userId)
+        const canSubmitEvent = picoPermissions.canManageEvents || hasPermission(permissionKeys, 'event.submit')
+
+        if (!canSubmitEvent) {
+          throw new Error('Voce nao pode enviar eventos para esse pico.')
+        }
+
+        const approvalStatus = picoPermissions.canManageEvents || canApproveEvents(permissionKeys)
+          ? 'approved'
+          : 'pending'
 
         const sportId = Number(payload.sportId)
         const { rows: sportRows } = await client.query('select id from sport where id = $1', [sportId])
@@ -1363,7 +2441,7 @@ export async function createRepository() {
           throw new Error('Selecione um esporte valido para o evento.')
         }
 
-        await client.query(
+        const { rows } = await client.query(
           `
             insert into pico_event (
               pico_id,
@@ -1373,9 +2451,13 @@ export async function createRepository() {
               sport_id,
               starts_at,
               entry_fee_cents,
-              prize_pool_cents
+              prize_pool_cents,
+              approval_status,
+              approved_by,
+              approved_at
             )
-            values ($1, $2, $3, $4, $5, $6, $7, $8)
+            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            returning id
           `,
           [
             picoId,
@@ -1386,10 +2468,14 @@ export async function createRepository() {
             new Date(payload.startsAt).toISOString(),
             Number(payload.entryFeeCents || 0),
             Number(payload.prizePoolCents || 0),
+            approvalStatus,
+            approvalStatus === 'approved' ? userId : null,
+            approvalStatus === 'approved' ? new Date().toISOString() : null,
           ],
         )
 
-        return buildPicoDetail(client, picoId, userId)
+        const eventRow = await getEventRowById(client, rows[0].id)
+        return buildEventSummary(client, eventRow, userId)
       })
     },
 
@@ -1405,6 +2491,11 @@ export async function createRepository() {
           throw new Error('Pico nao encontrado.')
         }
 
+        const permissionKeys = await getUserPermissionKeys(client, userId)
+        if (!hasPermission(permissionKeys, 'feed.post')) {
+          throw new Error('Seu perfil nao pode publicar no feed.')
+        }
+
         await client.query(
           `
             insert into pico_media (
@@ -1414,9 +2505,10 @@ export async function createRepository() {
               title,
               file_url,
               likes_count,
+              comments_count,
               views_count
             )
-            values ($1, $2, $3, $4, $5, 0, 0)
+            values ($1, $2, $3, $4, $5, 0, 0, 0)
           `,
           [
             picoId,
@@ -1428,6 +2520,164 @@ export async function createRepository() {
         )
 
         return buildPicoDetail(client, picoId, userId)
+      })
+    },
+
+    async toggleMediaLike(userId, mediaId) {
+      return withTransaction(async (client) => {
+        const mediaRow = await getMediaRowById(client, mediaId)
+        if (!mediaRow) {
+          throw new Error('Publicacao nao encontrada.')
+        }
+
+        const permissionKeys = await getUserPermissionKeys(client, userId)
+        if (!hasPermission(permissionKeys, 'media.react')) {
+          throw new Error('Seu perfil nao pode curtir publicacoes.')
+        }
+
+        const deleted = await client.query(
+          `
+            delete from pico_media_like
+            where media_id = $1
+              and user_id = $2
+            returning media_id
+          `,
+          [mediaId, userId],
+        )
+
+        if (!deleted.rows.length) {
+          await client.query(
+            `
+              insert into pico_media_like (media_id, user_id)
+              values ($1, $2)
+            `,
+            [mediaId, userId],
+          )
+          await client.query(
+            `
+              update pico_media
+              set likes_count = likes_count + 1,
+                  updated_at = now()
+              where id = $1
+            `,
+            [mediaId],
+          )
+        } else {
+          await client.query(
+            `
+              update pico_media
+              set likes_count = greatest(likes_count - 1, 0),
+                  updated_at = now()
+              where id = $1
+            `,
+            [mediaId],
+          )
+        }
+
+        return buildMediaDetail(client, await getMediaRowById(client, mediaId), userId)
+      })
+    },
+
+    async addMediaComment(userId, mediaId, text) {
+      const cleanText = normalizeString(text)
+      if (!cleanText) {
+        throw new Error('Escreva um comentario antes de enviar.')
+      }
+
+      return withTransaction(async (client) => {
+        const mediaRow = await getMediaRowById(client, mediaId)
+        if (!mediaRow) {
+          throw new Error('Publicacao nao encontrada.')
+        }
+
+        const permissionKeys = await getUserPermissionKeys(client, userId)
+        if (!hasPermission(permissionKeys, 'media.comment')) {
+          throw new Error('Seu perfil nao pode comentar publicacoes.')
+        }
+
+        await client.query(
+          `
+            insert into pico_media_comment (media_id, user_id, text_content)
+            values ($1, $2, $3)
+          `,
+          [mediaId, userId, cleanText],
+        )
+
+        await client.query(
+          `
+            update pico_media
+            set comments_count = comments_count + 1,
+                updated_at = now()
+            where id = $1
+          `,
+          [mediaId],
+        )
+
+        return buildMediaDetail(client, await getMediaRowById(client, mediaId), userId)
+      })
+    },
+
+    async deleteMediaComment(userId, mediaId, commentId) {
+      return withTransaction(async (client) => {
+        const mediaRow = await getMediaRowById(client, mediaId)
+        if (!mediaRow) {
+          throw new Error('Publicacao nao encontrada.')
+        }
+
+        const { rows } = await client.query(
+          `
+            select id, user_id
+            from pico_media_comment
+            where id = $1
+              and media_id = $2
+          `,
+          [commentId, mediaId],
+        )
+
+        const commentRow = rows[0]
+        if (!commentRow) {
+          throw new Error('Comentario nao encontrado.')
+        }
+
+        const picoPermissions = await getPicoPermissionsForUser(client, mediaRow.pico_id, userId)
+        if (!picoPermissions.canModerateContent && commentRow.user_id !== userId) {
+          throw new Error('Voce nao pode remover esse comentario.')
+        }
+
+        await client.query('delete from pico_media_comment where id = $1', [commentId])
+        await client.query(
+          `
+            update pico_media
+            set comments_count = greatest(comments_count - 1, 0),
+                updated_at = now()
+            where id = $1
+          `,
+          [mediaId],
+        )
+
+        return buildMediaDetail(client, await getMediaRowById(client, mediaId), userId)
+      })
+    },
+
+    async deleteMedia(userId, mediaId) {
+      return withTransaction(async (client) => {
+        const mediaRow = await getMediaRowById(client, mediaId)
+        if (!mediaRow) {
+          throw new Error('Publicacao nao encontrada.')
+        }
+
+        const picoPermissions = await getPicoPermissionsForUser(client, mediaRow.pico_id, userId)
+        if (!picoPermissions.canModerateContent && mediaRow.user_id !== userId) {
+          throw new Error('Voce nao pode remover essa publicacao.')
+        }
+
+        await client.query('delete from pico_media where id = $1', [mediaId])
+
+        return {
+          deleted: true,
+          mediaId,
+          picoId: mediaRow.pico_id,
+        }
       })
     },
 

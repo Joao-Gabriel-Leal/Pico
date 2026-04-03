@@ -1,22 +1,21 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { apiRequest } from '../api'
 import { useAuth } from '../auth'
-import MediaAsset from '../components/MediaAsset'
+import SocialPostCard from '../components/SocialPostCard'
 import { uploadSelectedFile } from '../utils/files'
 
-function formatDate(value) {
-  return new Intl.DateTimeFormat('pt-BR', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
-}
+const pageSize = 6
 
 export default function FeedPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const { user, token } = useAuth()
   const [items, setItems] = useState([])
   const [picos, setPicos] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
+  const [nextOffset, setNextOffset] = useState(0)
   const [saving, setSaving] = useState(false)
   const [uploadingFile, setUploadingFile] = useState(false)
   const [error, setError] = useState('')
@@ -27,17 +26,52 @@ export default function FeedPage() {
     title: '',
     fileUrl: '',
   })
+  const [showComposer, setShowComposer] = useState(searchParams.get('compose') === '1')
+  const sentinelRef = useRef(null)
+
+  useEffect(() => {
+    setShowComposer(searchParams.get('compose') === '1')
+  }, [searchParams])
+
+  async function loadFeed({ reset = false } = {}) {
+    const targetOffset = reset ? 0 : nextOffset
+
+    if (reset) {
+      setLoading(true)
+      setError('')
+    } else {
+      if (loadingMore || !hasMore) return
+      setLoadingMore(true)
+    }
+
+    try {
+      const payload = await apiRequest(`/api/feed?limit=${pageSize}&offset=${targetOffset}`, {
+        token,
+      })
+
+      setItems((current) => (reset ? payload.items : [...current, ...payload.items]))
+      setHasMore(payload.hasMore)
+      setNextOffset(payload.nextOffset)
+    } catch (nextError) {
+      setError(nextError.message)
+    } finally {
+      setLoading(false)
+      setLoadingMore(false)
+    }
+  }
 
   async function loadPage() {
     setLoading(true)
 
     try {
       const [feedPayload, picosPayload] = await Promise.all([
-        apiRequest('/api/feed', { token }),
+        apiRequest(`/api/feed?limit=${pageSize}&offset=0`, { token }),
         apiRequest('/api/picos', { token }),
       ])
 
       setItems(feedPayload.items)
+      setHasMore(feedPayload.hasMore)
+      setNextOffset(feedPayload.nextOffset)
       setPicos(picosPayload.items)
       setForm((current) => ({
         ...current,
@@ -53,6 +87,24 @@ export default function FeedPage() {
   useEffect(() => {
     loadPage()
   }, [token])
+
+  useEffect(() => {
+    if (!sentinelRef.current || !hasMore) return undefined
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          loadFeed()
+        }
+      },
+      {
+        rootMargin: '160px 0px',
+      },
+    )
+
+    observer.observe(sentinelRef.current)
+    return () => observer.disconnect()
+  }, [hasMore, nextOffset, loadingMore, token])
 
   async function handleFileChange(event) {
     const file = event.target.files?.[0]
@@ -101,6 +153,12 @@ export default function FeedPage() {
         title: '',
         fileUrl: '',
       }))
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current)
+        next.delete('compose')
+        return next
+      })
+      setShowComposer(false)
       await loadPage()
     } catch (nextError) {
       setError(nextError.message)
@@ -109,21 +167,128 @@ export default function FeedPage() {
     }
   }
 
+  function handlePostUpdated(updatedItem) {
+    setItems((current) =>
+      current.map((item) => (item.id === updatedItem.id ? { ...item, ...updatedItem } : item)),
+    )
+  }
+
+  function handlePostDeleted(mediaId) {
+    setItems((current) => current.filter((item) => item.id !== mediaId))
+  }
+
   return (
     <section className="page-grid social-page">
       <div className="page-column page-column-main feed-column">
         <div className="hero-card social-hero-card">
           <div>
-            <p className="eyebrow">Feed</p>
-            <h1>Posts dos picos em um feed continuo, mais rede social e menos gambiarra.</h1>
+            <p className="eyebrow">Feed principal</p>
+            <h1>Scroll infinito, posts sociais e cara de rede social de verdade.</h1>
             <p className="hero-copy">
-              Fotos e videos publicados nos picos entram aqui como posts de verdade.
+              Fotos e videos publicados nos picos entram aqui em ordem viva, com curtidas,
+              comentarios e autoplay quando o post entra em foco.
             </p>
           </div>
-          <div className="highlight-chip">
-            <strong>{items.length}</strong> posts no feed
+          <div className="inline-actions wrap-actions">
+            <button
+              className="primary-button small-link-button"
+              onClick={() => {
+                setShowComposer((current) => !current)
+                setSearchParams((current) => {
+                  const next = new URLSearchParams(current)
+                  if (showComposer) next.delete('compose')
+                  else next.set('compose', '1')
+                  return next
+                })
+              }}
+            >
+              {showComposer ? 'Fechar criacao' : 'Nova publicacao'}
+            </button>
+            <div className="highlight-chip">
+              <strong>{items.length}</strong> posts carregados
+            </div>
           </div>
         </div>
+
+        {showComposer ? (
+          <div className="side-card compose-card">
+            <div className="section-title">
+              <h2>Novo post</h2>
+              <span>topo do feed</span>
+            </div>
+
+            {user ? (
+              <form className="form-card compact-form" onSubmit={handlePublish}>
+                <label>
+                  Pico
+                  <select
+                    value={form.picoSlug}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, picoSlug: event.target.value }))
+                    }
+                  >
+                    <option value="">Selecione</option>
+                    {picos.map((pico) => (
+                      <option key={pico.id} value={pico.slug}>
+                        {pico.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Tipo
+                  <select
+                    value={form.mediaType}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        mediaType: event.target.value,
+                        fileUrl: '',
+                      }))
+                    }
+                  >
+                    <option value="video">Video</option>
+                    <option value="photo">Foto</option>
+                  </select>
+                </label>
+
+                <label>
+                  Titulo
+                  <input
+                    value={form.title}
+                    onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                  />
+                </label>
+
+                <label>
+                  Arquivo
+                  <input
+                    type="file"
+                    accept={form.mediaType === 'video' ? 'video/*' : 'image/*'}
+                    onChange={handleFileChange}
+                  />
+                </label>
+
+                {message ? <p className="success-text">{message}</p> : null}
+
+                <button
+                  className="primary-button full-width"
+                  disabled={saving || uploadingFile || !form.picoSlug || !form.fileUrl}
+                >
+                  {saving ? 'Publicando...' : 'Publicar no feed'}
+                </button>
+              </form>
+            ) : (
+              <div className="empty-state">
+                <p className="muted-text">Entre para publicar fotos e videos no feed dos picos.</p>
+                <Link className="primary-button small-link-button full-width" to="/entrar">
+                  Entrar agora
+                </Link>
+              </div>
+            )}
+          </div>
+        ) : null}
 
         {loading ? <div className="side-card">Carregando feed...</div> : null}
         {error ? <p className="error-text">{error}</p> : null}
@@ -131,54 +296,14 @@ export default function FeedPage() {
         <div className="list-stack">
           {items.length ? (
             items.map((item) => (
-              <article key={item.id} className="post-card">
-                <div className="post-card-header">
-                  <div className="user-chip">
-                    {item.author?.avatarUrl ? (
-                      <MediaAsset className="avatar-circle avatar-mini" src={item.author.avatarUrl} alt={item.author.displayName} />
-                    ) : (
-                      <div className="avatar-circle avatar-mini">
-                        {(item.author?.displayName || 'P').slice(0, 1).toUpperCase()}
-                      </div>
-                    )}
-                    <div>
-                      <strong>{item.author?.displayName || 'Comunidade'}</strong>
-                      <p>{item.pico?.name}</p>
-                    </div>
-                  </div>
-                  <span className="pill">{item.mediaType === 'video' ? 'Video' : 'Foto'}</span>
-                </div>
-
-                <MediaAsset
-                  className={item.mediaType === 'video' ? 'feed-video' : 'cover-thumb'}
-                  src={item.fileUrl}
-                  alt={item.title}
-                  mediaType={item.mediaType}
-                />
-
-                <div className="post-card-body">
-                  <strong>{item.title}</strong>
-                  <div className="meta-row">
-                    <span>{item.likesCount} likes</span>
-                    <span>{item.viewsCount} views</span>
-                    <span>{formatDate(item.createdAt)}</span>
-                  </div>
-                </div>
-
-                <div className="post-card-footer">
-                  <div className="user-chip">
-                    <div>
-                      <strong>{item.author?.username ? `@${item.author.username}` : 'Comunidade'}</strong>
-                      <p>{item.pico?.sport?.name}</p>
-                    </div>
-                  </div>
-                  {item.pico ? (
-                    <Link className="secondary-button small-link-button" to={`/picos/${item.pico.slug}`}>
-                      Abrir pico
-                    </Link>
-                  ) : null}
-                </div>
-              </article>
+              <SocialPostCard
+                key={item.id}
+                item={item}
+                token={token}
+                currentUser={user}
+                onUpdated={handlePostUpdated}
+                onDeleted={handlePostDeleted}
+              />
             ))
           ) : (
             <div className="side-card empty-state">
@@ -186,96 +311,12 @@ export default function FeedPage() {
             </div>
           )}
         </div>
-      </div>
 
-      <aside className="page-column rail-column">
-        <div className="side-card sticky-card">
-          <div className="section-title">
-            <h2>Novo post</h2>
-            <span>feed</span>
-          </div>
-
-          {user ? (
-            <form className="form-card compact-form" onSubmit={handlePublish}>
-              <label>
-                Pico
-                <select
-                  value={form.picoSlug}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, picoSlug: event.target.value }))
-                  }
-                >
-                  <option value="">Selecione</option>
-                  {picos.map((pico) => (
-                    <option key={pico.id} value={pico.slug}>
-                      {pico.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                Tipo
-                <select
-                  value={form.mediaType}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      mediaType: event.target.value,
-                      fileUrl: '',
-                    }))
-                  }
-                >
-                  <option value="video">Video</option>
-                  <option value="photo">Foto</option>
-                </select>
-              </label>
-
-              <label>
-                Titulo
-                <input
-                  value={form.title}
-                  onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-                />
-              </label>
-
-              <label>
-                Arquivo
-                <input
-                  type="file"
-                  accept={form.mediaType === 'video' ? 'video/*' : 'image/*'}
-                  onChange={handleFileChange}
-                />
-              </label>
-
-              {form.fileUrl ? (
-                <MediaAsset
-                  className={form.mediaType === 'video' ? 'feed-video' : 'image-preview'}
-                  src={form.fileUrl}
-                  alt="Preview do post"
-                  mediaType={form.mediaType}
-                />
-              ) : null}
-
-              {message ? <p className="success-text">{message}</p> : null}
-
-              <button
-                className="primary-button full-width"
-                disabled={saving || uploadingFile || !form.picoSlug || !form.fileUrl}
-              >
-                {saving ? 'Publicando...' : 'Publicar no feed'}
-              </button>
-            </form>
-          ) : (
-            <div className="empty-state">
-              <p className="muted-text">Entre para publicar fotos e videos no feed dos picos.</p>
-              <Link className="primary-button small-link-button full-width" to="/entrar">
-                Entrar agora
-              </Link>
-            </div>
-          )}
+        <div ref={sentinelRef} className="feed-sentinel">
+          {loadingMore ? <span className="status-pill">Carregando mais posts...</span> : null}
+          {!hasMore && items.length ? <span className="status-pill">Voce chegou no fim do feed.</span> : null}
         </div>
-      </aside>
+      </div>
     </section>
   )
 }

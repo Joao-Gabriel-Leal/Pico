@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   CircleMarker,
   MapContainer,
@@ -7,23 +7,48 @@ import {
   Popup,
   TileLayer,
   useMap,
+  useMapEvents,
 } from 'react-leaflet'
 import L from 'leaflet'
 import { apiRequest } from '../api'
 import { useAuth } from '../auth'
 import MediaAsset from '../components/MediaAsset'
-import { distanceBetween } from '../utils/geo'
+import { distanceBetween, getCurrentPosition } from '../utils/geo'
 
 const defaultCenter = [-23.55052, -46.633308]
 const markerPalette = ['orange', 'blue', 'green', 'gold', 'violet', 'red']
 
-function RecenterMap({ center, zoom }) {
+function MapViewportController({ viewportRequest, onBoundsChange, onManualMove }) {
   const map = useMap()
 
   useEffect(() => {
-    if (!center) return
-    map.flyTo(center, zoom, { duration: 1 })
-  }, [center, map, zoom])
+    const bounds = map.getBounds()
+    onBoundsChange({
+      north: bounds.getNorth(),
+      south: bounds.getSouth(),
+      east: bounds.getEast(),
+      west: bounds.getWest(),
+    })
+  }, [map, onBoundsChange])
+
+  useEffect(() => {
+    if (!viewportRequest?.center) return
+    map.flyTo(viewportRequest.center, viewportRequest.zoom, { duration: 0.8 })
+  }, [map, viewportRequest])
+
+  useMapEvents({
+    dragstart: onManualMove,
+    zoomstart: onManualMove,
+    moveend() {
+      const bounds = map.getBounds()
+      onBoundsChange({
+        north: bounds.getNorth(),
+        south: bounds.getSouth(),
+        east: bounds.getEast(),
+        west: bounds.getWest(),
+      })
+    },
+  })
 
   return null
 }
@@ -39,22 +64,30 @@ function makeMarker(color) {
 
 const userIcon = L.divIcon({
   className: '',
-  html: '<div class="map-user-marker"></div>',
-  iconSize: [18, 18],
-  iconAnchor: [9, 9],
+  html: '<div class="map-user-pill"><span>Voce</span></div>',
+  iconSize: [56, 28],
+  iconAnchor: [28, 34],
 })
 
 export default function ExplorePage() {
+  const navigate = useNavigate()
   const { user, token } = useAuth()
   const [sports, setSports] = useState([])
   const [items, setItems] = useState([])
   const [activeSport, setActiveSport] = useState('all')
   const [selectedSlug, setSelectedSlug] = useState('')
-  const [userPosition, setUserPosition] = useState(null)
-  const [followLocation, setFollowLocation] = useState(true)
+  const [userPosition, setUserPosition] = useState(user?.location || null)
+  const [loadingLocation, setLoadingLocation] = useState(false)
+  const [loadingPicos, setLoadingPicos] = useState(true)
   const [statusMessage, setStatusMessage] = useState(
-    'Toque em "Minha localizacao exata" para centralizar o mapa no seu ponto real.',
+    'Arraste o mapa livremente. Sua localizacao so muda quando voce tocar em "Centralizar".',
   )
+  const [bounds, setBounds] = useState(null)
+  const [viewportRequest, setViewportRequest] = useState({
+    center: user?.location ? [user.location.latitude, user.location.longitude] : defaultCenter,
+    zoom: user?.location ? 15 : 12,
+    key: 'initial',
+  })
 
   useEffect(() => {
     async function loadBootstrap() {
@@ -66,47 +99,32 @@ export default function ExplorePage() {
   }, [token])
 
   useEffect(() => {
-    async function loadPicos() {
-      const search = new URLSearchParams()
-      if (activeSport !== 'all') search.set('sportSlug', activeSport)
+    if (!bounds) return
 
-      const payload = await apiRequest(`/api/picos?${search.toString()}`, { token })
-      setItems(payload.items)
-      setSelectedSlug((current) => {
-        if (payload.items.some((item) => item.slug === current)) return current
-        return payload.items[0]?.slug || ''
-      })
+    async function loadPicos() {
+      setLoadingPicos(true)
+
+      try {
+        const search = new URLSearchParams()
+        if (activeSport !== 'all') search.set('sportSlug', activeSport)
+        search.set('north', String(bounds.north))
+        search.set('south', String(bounds.south))
+        search.set('east', String(bounds.east))
+        search.set('west', String(bounds.west))
+
+        const payload = await apiRequest(`/api/picos?${search.toString()}`, { token })
+        setItems(payload.items)
+        setSelectedSlug((current) => {
+          if (payload.items.some((item) => item.slug === current)) return current
+          return payload.items[0]?.slug || ''
+        })
+      } finally {
+        setLoadingPicos(false)
+      }
     }
 
     loadPicos()
-  }, [activeSport, token])
-
-  useEffect(() => {
-    if (!navigator.geolocation) {
-      setStatusMessage('Seu navegador nao suporta geolocalizacao.')
-      return
-    }
-
-    const watchId = navigator.geolocation.watchPosition(
-      (position) => {
-        setUserPosition({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        })
-        setStatusMessage('Localizacao capturada. Voce pode recentralizar o mapa a qualquer momento.')
-      },
-      () => {
-        setStatusMessage('Permita a localizacao do navegador para ver sua posicao exata.')
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 15000,
-      },
-    )
-
-    return () => navigator.geolocation.clearWatch(watchId)
-  }, [])
+  }, [activeSport, bounds, token])
 
   const itemsWithDistance = useMemo(() => {
     return [...items]
@@ -120,7 +138,9 @@ export default function ExplorePage() {
           : null,
       }))
       .sort((left, right) => {
-        if (left.distanceKm === null && right.distanceKm === null) return 0
+        if (left.distanceKm === null && right.distanceKm === null) {
+          return right.voteCount - left.voteCount
+        }
         if (left.distanceKm === null) return 1
         if (right.distanceKm === null) return -1
         return left.distanceKm - right.distanceKm
@@ -132,25 +152,24 @@ export default function ExplorePage() {
     [itemsWithDistance, selectedSlug],
   )
 
-  const mapCenter = followLocation
-    ? userPosition
-      ? [userPosition.latitude, userPosition.longitude]
-      : selectedPico
-        ? [selectedPico.latitude, selectedPico.longitude]
-        : defaultCenter
-    : selectedPico
-      ? [selectedPico.latitude, selectedPico.longitude]
-      : userPosition
-        ? [userPosition.latitude, userPosition.longitude]
-        : defaultCenter
+  async function focusExactLocation() {
+    setLoadingLocation(true)
+    setStatusMessage('Capturando sua localizacao exata...')
 
-  function focusExactLocation() {
-    if (userPosition) {
-      setFollowLocation(true)
-      return
+    try {
+      const location = await getCurrentPosition()
+      setUserPosition(location)
+      setViewportRequest({
+        center: [location.latitude, location.longitude],
+        zoom: 15,
+        key: `${location.latitude}-${location.longitude}-${Date.now()}`,
+      })
+      setStatusMessage('Sua localizacao foi atualizada. Agora o mapa fica livre ate voce recentralizar de novo.')
+    } catch (nextError) {
+      setStatusMessage(nextError.message)
+    } finally {
+      setLoadingLocation(false)
     }
-
-    setStatusMessage('Aceite a permissao de localizacao do navegador e tente novamente.')
   }
 
   return (
@@ -159,16 +178,16 @@ export default function ExplorePage() {
         <div className="hero-card">
           <div>
             <p className="eyebrow">Explorar picos</p>
-            <h1>Mapa leve, rapido e feito para celular.</h1>
+            <h1>Mapa livre no mobile, leve no desktop e focado no que esta perto.</h1>
             <p className="hero-copy">
-              Agora tudo gira em torno da sua localizacao exata. Escolha esportes, abra um pico,
-              vote e entre no detalhe quando realmente precisar.
+              O mapa nao volta mais sozinho para sua posicao. Voce move livremente e so recentraliza
+              quando quiser.
             </p>
           </div>
 
           <div className="hero-actions">
-            <button className="secondary-button" onClick={focusExactLocation}>
-              Minha localizacao exata
+            <button className="secondary-button" onClick={focusExactLocation} disabled={loadingLocation}>
+              {loadingLocation ? 'Centralizando...' : 'Centralizar'}
             </button>
             <Link className="primary-button small-link-button" to="/novo-pico">
               Marcar novo pico
@@ -202,13 +221,13 @@ export default function ExplorePage() {
               <strong>Mapa principal</strong>
               <p>{statusMessage}</p>
             </div>
-            {user ? <span className="status-pill">logado</span> : <span className="status-pill">visitante</span>}
+            <span className="status-pill">{loadingPicos ? 'atualizando picos' : `${items.length} picos`}</span>
           </div>
 
           <div className="leaflet-shell">
             <MapContainer
-              center={mapCenter}
-              zoom={followLocation && userPosition ? 15 : 12}
+              center={viewportRequest.center}
+              zoom={viewportRequest.zoom}
               scrollWheelZoom
               className="leaflet-map"
             >
@@ -216,18 +235,29 @@ export default function ExplorePage() {
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               />
-              <RecenterMap center={mapCenter} zoom={followLocation && userPosition ? 15 : 12} />
+
+              <MapViewportController
+                viewportRequest={viewportRequest}
+                onBoundsChange={setBounds}
+                onManualMove={() =>
+                  setStatusMessage('Mapa livre. Toque em "Centralizar" se quiser voltar para sua localizacao.')
+                }
+              />
 
               {userPosition ? (
                 <>
                   <CircleMarker
                     center={[userPosition.latitude, userPosition.longitude]}
-                    radius={30}
+                    radius={10}
                     pathOptions={{ color: '#2563eb', fillColor: '#2563eb', fillOpacity: 0.12 }}
+                    interactive={false}
                   />
-                  <Marker position={[userPosition.latitude, userPosition.longitude]} icon={userIcon}>
-                    <Popup>Voce esta aqui.</Popup>
-                  </Marker>
+                  <Marker
+                    position={[userPosition.latitude, userPosition.longitude]}
+                    icon={userIcon}
+                    interactive={false}
+                    zIndexOffset={100}
+                  />
                 </>
               ) : null}
 
@@ -236,103 +266,79 @@ export default function ExplorePage() {
                   key={item.id}
                   position={[item.latitude, item.longitude]}
                   icon={makeMarker(markerPalette[index % markerPalette.length])}
+                  zIndexOffset={1200}
                   eventHandlers={{
-                    click: () => {
-                      setSelectedSlug(item.slug)
-                      setFollowLocation(false)
-                    },
+                    click: () => navigate(`/picos/${item.slug}`),
                   }}
                 >
                   <Popup>
                     <strong>{item.name}</strong>
                     <br />
                     {item.sport.name} - {item.voteCount} votos
+                    <br />
+                    <Link className="text-link" to={`/picos/${item.slug}`}>
+                      Abrir perfil do pico
+                    </Link>
                   </Popup>
                 </Marker>
               ))}
             </MapContainer>
 
-            <button className="map-fab" onClick={focusExactLocation}>
-              Minha localizacao exata
+            <button className="map-fab" onClick={focusExactLocation} disabled={loadingLocation}>
+              {loadingLocation ? 'Centralizando...' : 'Centralizar'}
             </button>
           </div>
         </div>
       </div>
 
-      <aside className="page-column">
-        <div className="side-card">
+      <aside className="page-column rail-column">
+        <div className="side-card sticky-card">
           <div className="section-title">
-            <h2>Pico selecionado</h2>
-            <span>{itemsWithDistance.length} picos</span>
+            <h2>Picos na area</h2>
+            <span>{itemsWithDistance.length}</span>
           </div>
 
           {selectedPico ? (
-            <div className="spot-sheet">
-              {selectedPico.previewPhoto ? (
-                <MediaAsset className="image-preview" src={selectedPico.previewPhoto} alt={selectedPico.name} />
-              ) : null}
-              <span className="pill">{selectedPico.sport.name}</span>
-              <h3>{selectedPico.name}</h3>
-              <p>{selectedPico.description}</p>
-
-              <div className="stats-stack">
-                <article>
-                  <span>Condicao</span>
-                  <strong>{selectedPico.conditionLabel}</strong>
-                </article>
-                <article>
-                  <span>Midias</span>
-                  <strong>{selectedPico.mediaCount}</strong>
-                </article>
-                <article>
-                  <span>Votos</span>
-                  <strong>{selectedPico.voteCount}</strong>
-                </article>
-              </div>
-
-              {selectedPico.activeCampaign ? (
-                <div className="mini-card">
-                  <strong>Vaquinha ativa</strong>
-                  <p>{selectedPico.activeCampaign.title}</p>
-                  <span>
-                    {selectedPico.activeCampaign.raisedLabel} de {selectedPico.activeCampaign.goalLabel}
-                  </span>
+            <article className="mini-card pico-preview-card">
+              <MediaAsset className="cover-thumb small-cover-thumb" src={selectedPico.previewPhoto || selectedPico.coverImageUrl} alt={selectedPico.name} />
+              <div className="mini-card-body">
+                <strong>{selectedPico.name}</strong>
+                <p>{selectedPico.description}</p>
+                <div className="meta-row">
+                  <span>{selectedPico.sport.name}</span>
+                  <span>{selectedPico.voteCount} votos</span>
+                  {selectedPico.distanceKm !== null ? <span>{selectedPico.distanceKm.toFixed(1)} km</span> : null}
                 </div>
-              ) : null}
-
-              <Link className="primary-button small-link-button full-width" to={`/picos/${selectedPico.slug}`}>
-                Abrir perfil do pico
-              </Link>
-            </div>
+                <Link className="primary-button small-link-button full-width" to={`/picos/${selectedPico.slug}`}>
+                  Abrir perfil do pico
+                </Link>
+              </div>
+            </article>
           ) : (
-            <p className="muted-text">Nenhum pico encontrado com esses filtros.</p>
+            <p className="muted-text">Mova o mapa para carregar picos visiveis nessa regiao.</p>
           )}
-        </div>
 
-        <div className="side-card">
-          <div className="section-title">
-            <h2>Perto de voce</h2>
-            <span>lista leve</span>
-          </div>
+          <div className="section-divider" />
 
-          <div className="list-stack">
+          <div className="list-stack compact-list">
             {itemsWithDistance.map((item) => (
               <button
                 key={item.id}
                 className={item.slug === selectedSlug ? 'list-item active' : 'list-item'}
                 onClick={() => {
                   setSelectedSlug(item.slug)
-                  setFollowLocation(false)
+                  setViewportRequest({
+                    center: [item.latitude, item.longitude],
+                    zoom: 15,
+                    key: `${item.slug}-${Date.now()}`,
+                  })
                 }}
               >
                 <div>
                   <strong>{item.name}</strong>
-                  <p>
-                    {item.sport.name}
-                    {item.distanceKm !== null ? ` - ${item.distanceKm.toFixed(1)} km` : ''}
-                  </p>
+                  <p>{item.sport.name}</p>
                 </div>
-                <span>{item.voteCount} votos</span>
+                <span>{item.distanceKm !== null ? `${item.distanceKm.toFixed(1)} km` : `${item.voteCount} votos`}</span>
               </button>
             ))}
           </div>

@@ -176,6 +176,10 @@ app.get('/api/picos', async (request, response) => {
     items: await repository.listPicos(
       {
         sportSlug: request.query.sportSlug,
+        north: request.query.north,
+        south: request.query.south,
+        east: request.query.east,
+        west: request.query.west,
       },
       currentUser?.id,
     ),
@@ -189,25 +193,87 @@ app.get('/api/events', async (request, response) => {
   })
 })
 
+app.get('/api/events/:eventId', async (request, response) => {
+  const currentUser = await getAuthenticatedUser(request)
+  const item = await repository.getEventById(request.params.eventId, currentUser?.id)
+
+  if (!item) {
+    response.status(404).json({ error: 'Evento nao encontrado.' })
+    return
+  }
+
+  response.json({ item })
+})
+
 app.get('/api/feed', async (request, response) => {
   const currentUser = await getAuthenticatedUser(request)
   const authorId =
     request.query.authorId === 'me' ? currentUser?.id || null : request.query.authorId || null
 
-  response.json({
-    items: await repository.listFeed(
+  response.json(
+    await repository.listFeed(
       {
         authorId,
+        limit: request.query.limit,
+        offset: request.query.offset,
       },
       currentUser?.id,
     ),
-  })
+  )
 })
 
 app.get('/api/people', requireAuth, async (request, response) => {
   response.json({
     items: await repository.listPeople(request.currentUser.id),
   })
+})
+
+app.get('/api/moderation', requireAuth, async (request, response) => {
+  try {
+    response.json(await repository.listModerationQueue(request.currentUser.id))
+  } catch (error) {
+    response.status(400).json({ error: error.message })
+  }
+})
+
+app.post('/api/moderation/picos/:slug/approve', requireAuth, async (request, response) => {
+  try {
+    response.json({
+      item: await repository.approvePico(request.currentUser.id, request.params.slug),
+    })
+  } catch (error) {
+    response.status(400).json({ error: error.message })
+  }
+})
+
+app.post('/api/moderation/picos/:slug/reject', requireAuth, async (request, response) => {
+  try {
+    response.json({
+      item: await repository.rejectPico(request.currentUser.id, request.params.slug),
+    })
+  } catch (error) {
+    response.status(400).json({ error: error.message })
+  }
+})
+
+app.post('/api/moderation/events/:eventId/approve', requireAuth, async (request, response) => {
+  try {
+    response.json({
+      item: await repository.approveEvent(request.currentUser.id, request.params.eventId),
+    })
+  } catch (error) {
+    response.status(400).json({ error: error.message })
+  }
+})
+
+app.post('/api/moderation/events/:eventId/reject', requireAuth, async (request, response) => {
+  try {
+    response.json({
+      item: await repository.rejectEvent(request.currentUser.id, request.params.eventId),
+    })
+  } catch (error) {
+    response.status(400).json({ error: error.message })
+  }
 })
 
 app.post('/api/people/:userId/follow', requireAuth, async (request, response) => {
@@ -238,6 +304,57 @@ app.post('/api/picos', requireAuth, async (request, response) => {
     validatePicoPayload(request.body)
     response.status(201).json({
       item: await repository.createPico(request.currentUser.id, request.body),
+    })
+  } catch (error) {
+    response.status(400).json({ error: error.message })
+  }
+})
+
+app.put('/api/picos/:slug', requireAuth, async (request, response) => {
+  try {
+    validatePicoPayload(request.body)
+    response.json({
+      item: await repository.updatePico(request.currentUser.id, request.params.slug, request.body),
+    })
+  } catch (error) {
+    response.status(400).json({ error: error.message })
+  }
+})
+
+app.delete('/api/picos/:slug', requireAuth, async (request, response) => {
+  try {
+    response.json(await repository.deletePico(request.currentUser.id, request.params.slug))
+  } catch (error) {
+    response.status(400).json({ error: error.message })
+  }
+})
+
+app.post('/api/picos/:slug/admins', requireAuth, async (request, response) => {
+  try {
+    if (!request.body.userId) {
+      throw new Error('Escolha o usuario que vai administrar o pico.')
+    }
+
+    response.status(201).json({
+      item: await repository.addPicoAdmin(
+        request.currentUser.id,
+        request.params.slug,
+        request.body.userId,
+      ),
+    })
+  } catch (error) {
+    response.status(400).json({ error: error.message })
+  }
+})
+
+app.delete('/api/picos/:slug/admins/:userId', requireAuth, async (request, response) => {
+  try {
+    response.json({
+      item: await repository.removePicoAdmin(
+        request.currentUser.id,
+        request.params.slug,
+        request.params.userId,
+      ),
     })
   } catch (error) {
     response.status(400).json({ error: error.message })
@@ -297,10 +414,88 @@ app.post('/api/picos/:slug/media', requireAuth, async (request, response) => {
   }
 })
 
+app.post('/api/media/:mediaId/likes', requireAuth, async (request, response) => {
+  try {
+    response.status(201).json({
+      item: await repository.toggleMediaLike(request.currentUser.id, request.params.mediaId),
+    })
+  } catch (error) {
+    response.status(400).json({ error: error.message })
+  }
+})
+
+app.post('/api/media/:mediaId/comments', requireAuth, async (request, response) => {
+  try {
+    response.status(201).json({
+      item: await repository.addMediaComment(
+        request.currentUser.id,
+        request.params.mediaId,
+        request.body.text,
+      ),
+    })
+  } catch (error) {
+    response.status(400).json({ error: error.message })
+  }
+})
+
+app.delete('/api/media/:mediaId/comments/:commentId', requireAuth, async (request, response) => {
+  try {
+    response.json({
+      item: await repository.deleteMediaComment(
+        request.currentUser.id,
+        request.params.mediaId,
+        request.params.commentId,
+      ),
+    })
+  } catch (error) {
+    response.status(400).json({ error: error.message })
+  }
+})
+
+app.delete('/api/media/:mediaId', requireAuth, async (request, response) => {
+  try {
+    response.json(await repository.deleteMedia(request.currentUser.id, request.params.mediaId))
+  } catch (error) {
+    response.status(400).json({ error: error.message })
+  }
+})
+
 app.post('/api/picos/:slug/vote', requireAuth, async (request, response) => {
   try {
     response.status(201).json({
       item: await repository.toggleVote(request.currentUser.id, request.params.slug),
+    })
+  } catch (error) {
+    response.status(400).json({ error: error.message })
+  }
+})
+
+app.post('/api/users/:userId/roles', requireAuth, async (request, response) => {
+  try {
+    if (!request.body.roleSlug) {
+      throw new Error('Escolha a role que sera associada.')
+    }
+
+    response.status(201).json({
+      item: await repository.assignRole(
+        request.currentUser.id,
+        request.params.userId,
+        request.body.roleSlug,
+      ),
+    })
+  } catch (error) {
+    response.status(400).json({ error: error.message })
+  }
+})
+
+app.delete('/api/users/:userId/roles/:roleSlug', requireAuth, async (request, response) => {
+  try {
+    response.json({
+      item: await repository.removeRole(
+        request.currentUser.id,
+        request.params.userId,
+        request.params.roleSlug,
+      ),
     })
   } catch (error) {
     response.status(400).json({ error: error.message })
@@ -342,6 +537,19 @@ app.get('/api/dms/:conversationId', requireAuth, async (request, response) => {
   }
 
   response.json({ conversation })
+})
+
+app.post('/api/dms/:conversationId/read', requireAuth, async (request, response) => {
+  try {
+    response.json({
+      conversation: await repository.markDirectConversationRead(
+        request.currentUser.id,
+        request.params.conversationId,
+      ),
+    })
+  } catch (error) {
+    response.status(400).json({ error: error.message })
+  }
 })
 
 app.post('/api/dms/:conversationId/messages', requireAuth, async (request, response) => {

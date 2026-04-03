@@ -1,4 +1,5 @@
-import { Link, NavLink, Outlet } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth'
 
 const navItems = [
@@ -9,7 +10,13 @@ const navItems = [
 ]
 
 export default function AppLayout() {
+  const location = useLocation()
   const { user, logout } = useAuth()
+  const [showCreateMenu, setShowCreateMenu] = useState(false)
+
+  useEffect(() => {
+    setShowCreateMenu(false)
+  }, [location.pathname, location.search])
 
   return (
     <div className="app-shell app-instagram-shell">
@@ -35,6 +42,9 @@ export default function AppLayout() {
         </nav>
 
         <div className="sidebar-actions">
+          <button className="secondary-button small-link-button full-width" onClick={() => setShowCreateMenu((current) => !current)}>
+            Criar
+          </button>
           <Link className="primary-button small-link-button full-width" to="/novo-pico">
             Marcar novo pico
           </Link>
@@ -73,6 +83,9 @@ export default function AppLayout() {
           </div>
 
           <div className="topbar-actions">
+            <button className="secondary-button small-link-button topbar-action" onClick={() => setShowCreateMenu((current) => !current)}>
+              +
+            </button>
             <Link className="secondary-button small-link-button topbar-action" to="/novo-pico">
               Novo pico
             </Link>
@@ -87,6 +100,22 @@ export default function AppLayout() {
             )}
           </div>
         </header>
+
+        {showCreateMenu ? (
+          <div className="create-menu-shell">
+            <div className="create-menu-card">
+              <Link className="create-menu-link" to="/feed?compose=1">
+                Nova publicacao
+              </Link>
+              <Link className="create-menu-link" to="/eventos?compose=1">
+                Novo evento
+              </Link>
+              <Link className="create-menu-link" to="/novo-pico">
+                Novo pico
+              </Link>
+            </div>
+          </div>
+        ) : null}
 
         <main className="page-wrapper">
           <Outlet />

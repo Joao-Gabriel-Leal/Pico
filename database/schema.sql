@@ -6,6 +6,19 @@ create table if not exists sport (
   name text not null
 );
 
+create table if not exists role (
+  id serial primary key,
+  slug text not null unique,
+  name text not null,
+  description text default ''
+);
+
+create table if not exists permission (
+  id serial primary key,
+  key text not null unique,
+  description text default ''
+);
+
 create table if not exists app_user (
   id uuid primary key default gen_random_uuid(),
   email text not null unique,
@@ -23,6 +36,20 @@ create table if not exists profile (
   bio text default '',
   avatar_url text default '',
   updated_at timestamptz not null default now()
+);
+
+create table if not exists role_permission (
+  role_id integer not null references role(id) on delete cascade,
+  permission_id integer not null references permission(id) on delete cascade,
+  primary key (role_id, permission_id)
+);
+
+create table if not exists user_role (
+  user_id uuid not null references app_user(id) on delete cascade,
+  role_id integer not null references role(id) on delete cascade,
+  granted_by uuid references app_user(id) on delete set null,
+  created_at timestamptz not null default now(),
+  primary key (user_id, role_id)
 );
 
 create table if not exists user_favorite_sport (
@@ -57,7 +84,19 @@ create table if not exists pico (
   status_text text not null,
   condition_label text not null,
   cover_image_url text default '',
-  created_at timestamptz not null default now()
+  approval_status text not null default 'approved' check (approval_status in ('pending', 'approved', 'rejected')),
+  approved_by uuid references app_user(id) on delete set null,
+  approved_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists pico_admin (
+  pico_id uuid not null references pico(id) on delete cascade,
+  user_id uuid not null references app_user(id) on delete cascade,
+  granted_by uuid references app_user(id) on delete set null,
+  created_at timestamptz not null default now(),
+  primary key (pico_id, user_id)
 );
 
 create table if not exists pico_vote (
@@ -75,7 +114,24 @@ create table if not exists pico_media (
   title text not null,
   file_url text not null,
   likes_count integer not null default 0,
+  comments_count integer not null default 0,
   views_count integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists pico_media_like (
+  media_id uuid not null references pico_media(id) on delete cascade,
+  user_id uuid not null references app_user(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (media_id, user_id)
+);
+
+create table if not exists pico_media_comment (
+  id uuid primary key default gen_random_uuid(),
+  media_id uuid not null references pico_media(id) on delete cascade,
+  user_id uuid not null references app_user(id) on delete cascade,
+  text_content text not null,
   created_at timestamptz not null default now()
 );
 
@@ -89,7 +145,11 @@ create table if not exists pico_event (
   starts_at timestamptz not null,
   entry_fee_cents integer not null default 0,
   prize_pool_cents integer not null default 0,
-  created_at timestamptz not null default now()
+  approval_status text not null default 'approved' check (approval_status in ('pending', 'approved', 'rejected')),
+  approved_by uuid references app_user(id) on delete set null,
+  approved_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 create table if not exists crowdfunding_campaign (
@@ -121,6 +181,7 @@ create table if not exists direct_conversation (
 create table if not exists direct_conversation_participant (
   conversation_id uuid not null references direct_conversation(id) on delete cascade,
   user_id uuid not null references app_user(id) on delete cascade,
+  last_read_at timestamptz not null default now(),
   primary key (conversation_id, user_id)
 );
 
@@ -132,13 +193,33 @@ create table if not exists direct_message (
   created_at timestamptz not null default now()
 );
 
+alter table pico add column if not exists updated_at timestamptz not null default now();
+alter table pico add column if not exists approval_status text not null default 'approved';
+alter table pico add column if not exists approved_by uuid references app_user(id) on delete set null;
+alter table pico add column if not exists approved_at timestamptz;
+alter table pico_media add column if not exists comments_count integer not null default 0;
+alter table pico_media add column if not exists updated_at timestamptz not null default now();
+alter table pico_event add column if not exists updated_at timestamptz not null default now();
+alter table pico_event add column if not exists approval_status text not null default 'approved';
+alter table pico_event add column if not exists approved_by uuid references app_user(id) on delete set null;
+alter table pico_event add column if not exists approved_at timestamptz;
+alter table direct_conversation_participant add column if not exists last_read_at timestamptz not null default now();
+
+create index if not exists permission_key_idx on permission (key);
+create index if not exists user_role_role_id_idx on user_role (role_id);
 create index if not exists user_follow_following_id_idx on user_follow (following_id);
 create index if not exists auth_session_user_id_idx on auth_session (user_id);
 create index if not exists pico_created_at_idx on pico (created_at desc);
+create index if not exists pico_location_idx on pico (latitude, longitude);
 create index if not exists pico_vote_user_id_idx on pico_vote (user_id);
+create index if not exists pico_admin_user_id_idx on pico_admin (user_id);
 create index if not exists pico_media_pico_created_at_idx on pico_media (pico_id, created_at desc);
 create index if not exists pico_media_user_created_at_idx on pico_media (user_id, created_at desc);
+create index if not exists pico_media_like_user_id_idx on pico_media_like (user_id);
+create index if not exists pico_media_comment_media_created_at_idx on pico_media_comment (media_id, created_at desc);
+create index if not exists pico_media_comment_user_id_idx on pico_media_comment (user_id);
 create index if not exists pico_event_pico_starts_at_idx on pico_event (pico_id, starts_at);
+create index if not exists pico_event_starts_at_idx on pico_event (starts_at);
 create index if not exists crowdfunding_campaign_pico_created_at_idx on crowdfunding_campaign (pico_id, created_at desc);
 create unique index if not exists crowdfunding_campaign_one_active_per_pico_idx
   on crowdfunding_campaign (pico_id)

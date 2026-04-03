@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { apiRequest } from '../api'
 import { useAuth } from '../auth'
 import MediaAsset from '../components/MediaAsset'
@@ -16,6 +16,7 @@ function sumPrizePool(items) {
 }
 
 export default function EventsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const { user, token } = useAuth()
   const [items, setItems] = useState([])
   const [picos, setPicos] = useState([])
@@ -33,6 +34,11 @@ export default function EventsPage() {
     entryFeeCents: 0,
     prizePoolCents: 0,
   })
+  const [showComposer, setShowComposer] = useState(searchParams.get('compose') === '1')
+
+  useEffect(() => {
+    setShowComposer(searchParams.get('compose') === '1')
+  }, [searchParams])
 
   async function loadPage() {
     setLoading(true)
@@ -44,13 +50,15 @@ export default function EventsPage() {
         apiRequest('/api/auth/options'),
       ])
 
+      const visiblePicos = picosPayload.items.filter((item) => item.approvalStatus === 'approved')
+
       setItems(eventsPayload.items)
-      setPicos(picosPayload.items)
+      setPicos(visiblePicos)
       setSports(optionsPayload.sports)
       setForm((current) => ({
         ...current,
-        picoSlug: current.picoSlug || picosPayload.items[0]?.slug || '',
-        sportId: current.sportId || picosPayload.items[0]?.sport?.id || optionsPayload.sports[0]?.id || '',
+        picoSlug: current.picoSlug || visiblePicos[0]?.slug || '',
+        sportId: current.sportId || visiblePicos[0]?.sport?.id || optionsPayload.sports[0]?.id || '',
       }))
     } catch (nextError) {
       setError(nextError.message)
@@ -83,7 +91,7 @@ export default function EventsPage() {
         token,
         body: form,
       })
-      setMessage('Evento publicado com sucesso.')
+      setMessage(user?.permissions?.includes('event.approve') ? 'Evento publicado com sucesso.' : 'Evento enviado para aprovacao.')
       setForm((current) => ({
         ...current,
         title: '',
@@ -92,6 +100,12 @@ export default function EventsPage() {
         entryFeeCents: 0,
         prizePoolCents: 0,
       }))
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current)
+        next.delete('compose')
+        return next
+      })
+      setShowComposer(false)
       await loadPage()
     } catch (nextError) {
       setError(nextError.message)
@@ -115,34 +129,148 @@ export default function EventsPage() {
         <div className="hero-card social-hero-card">
           <div>
             <p className="eyebrow">Eventos e campeonatos</p>
-            <h1>Uma agenda viva dos picos, pronta para abrir e entrar.</h1>
+            <h1>Uma agenda viva dos picos, ordenada pelo que esta mais perto de voce.</h1>
             <p className="hero-copy">
-              Aqui fica a timeline de amistosos, campeonatos valendo grana de vaquinha e encontros
-              da comunidade.
+              Cada card agora mostra o pico associado, data, premio e distancia quando sua
+              localizacao estiver disponivel.
             </p>
           </div>
 
-          <div className="stats-stack inline-stats">
-            <article>
-              <span>Eventos</span>
-              <strong>{totals.total}</strong>
-            </article>
-            <article>
-              <span>Esportes</span>
-              <strong>{totals.sports}</strong>
-            </article>
-            <article>
-              <span>Premiacao</span>
-              <strong>
-                {new Intl.NumberFormat('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                  maximumFractionDigits: 0,
-                }).format(totals.prizePoolCents / 100)}
-              </strong>
-            </article>
+          <div className="inline-actions wrap-actions">
+            <button
+              className="primary-button small-link-button"
+              onClick={() => {
+                setShowComposer((current) => !current)
+                setSearchParams((current) => {
+                  const next = new URLSearchParams(current)
+                  if (showComposer) next.delete('compose')
+                  else next.set('compose', '1')
+                  return next
+                })
+              }}
+            >
+              {showComposer ? 'Fechar criacao' : 'Novo evento'}
+            </button>
+
+            <div className="stats-stack inline-stats">
+              <article>
+                <span>Eventos</span>
+                <strong>{totals.total}</strong>
+              </article>
+              <article>
+                <span>Esportes</span>
+                <strong>{totals.sports}</strong>
+              </article>
+              <article>
+                <span>Premiacao</span>
+                <strong>
+                  {new Intl.NumberFormat('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL',
+                    maximumFractionDigits: 0,
+                  }).format(totals.prizePoolCents / 100)}
+                </strong>
+              </article>
+            </div>
           </div>
         </div>
+
+        {showComposer ? (
+          <div className="side-card compose-card">
+            <div className="section-title">
+              <h2>{user?.permissions?.includes('event.approve') ? 'Criar evento' : 'Sugerir evento'}</h2>
+              <span>topo da agenda</span>
+            </div>
+
+            {user ? (
+              <form className="form-card compact-form" onSubmit={handleCreateEvent}>
+                <label>
+                  Pico
+                  <select value={form.picoSlug} onChange={(event) => handlePicoChange(event.target.value)}>
+                    <option value="">Selecione</option>
+                    {picos.map((pico) => (
+                      <option key={pico.id} value={pico.slug}>
+                        {pico.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Titulo
+                  <input
+                    value={form.title}
+                    onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                  />
+                </label>
+
+                <label>
+                  Esporte
+                  <select
+                    value={form.sportId}
+                    onChange={(event) => setForm((current) => ({ ...current, sportId: Number(event.target.value) }))}
+                  >
+                    <option value="">Selecione</option>
+                    {sports.map((sport) => (
+                      <option key={sport.id} value={sport.id}>
+                        {sport.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Data e hora
+                  <input
+                    type="datetime-local"
+                    value={form.startsAt}
+                    onChange={(event) => setForm((current) => ({ ...current, startsAt: event.target.value }))}
+                  />
+                </label>
+
+                <div className="two-column-grid">
+                  <label>
+                    Entrada
+                    <input
+                      value={form.entryFeeCents}
+                      onChange={(event) => setForm((current) => ({ ...current, entryFeeCents: Number(event.target.value) }))}
+                    />
+                  </label>
+
+                  <label>
+                    Premio
+                    <input
+                      value={form.prizePoolCents}
+                      onChange={(event) => setForm((current) => ({ ...current, prizePoolCents: Number(event.target.value) }))}
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  Descricao
+                  <textarea
+                    rows="3"
+                    value={form.description}
+                    onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+                  />
+                </label>
+
+                {message ? <p className="success-text">{message}</p> : null}
+
+                <button className="primary-button full-width" disabled={saving || !form.picoSlug}>
+                  {saving ? 'Enviando...' : user?.permissions?.includes('event.approve') ? 'Publicar evento' : 'Enviar para aprovacao'}
+                </button>
+              </form>
+            ) : (
+              <div className="empty-state">
+                <p className="muted-text">Entre para publicar amistosos, campeonatos e encontros.</p>
+                <Link className="primary-button small-link-button full-width" to="/entrar">
+                  Entrar agora
+                </Link>
+              </div>
+            )}
+          </div>
+        ) : null}
 
         {loading ? <div className="side-card">Carregando eventos...</div> : null}
         {error ? <p className="error-text">{error}</p> : null}
@@ -168,10 +296,12 @@ export default function EventsPage() {
 
               <div className="post-card-body">
                 <p>{item.description || 'Evento criado pela comunidade do pico.'}</p>
-                <div className="meta-row">
+                <div className="meta-row wrap-actions">
                   <span>{formatDate(item.startsAt)}</span>
                   <span>{item.entryFeeLabel} entrada</span>
                   <span>{item.prizePoolLabel} premio</span>
+                  {item.distanceLabel ? <span>{item.distanceLabel}</span> : null}
+                  {item.approvalStatus !== 'approved' ? <span className="pill">Pendente</span> : null}
                 </div>
               </div>
 
@@ -186,127 +316,21 @@ export default function EventsPage() {
                   </div>
                 </div>
 
-                {item.pico ? (
-                  <Link className="secondary-button small-link-button" to={`/picos/${item.pico.slug}`}>
-                    Abrir pico
+                <div className="inline-actions">
+                  {item.pico ? (
+                    <Link className="secondary-button small-link-button" to={`/picos/${item.pico.slug}`}>
+                      Abrir pico
+                    </Link>
+                  ) : null}
+                  <Link className="primary-button small-link-button" to={`/eventos/${item.id}`}>
+                    Ver detalhe
                   </Link>
-                ) : null}
+                </div>
               </div>
             </article>
           ))}
         </div>
       </div>
-
-      <aside className="page-column rail-column">
-        <div className="side-card sticky-card">
-          <div className="section-title">
-            <h2>Criar evento</h2>
-            <span>estilo feed</span>
-          </div>
-
-          {user ? (
-            <form className="form-card compact-form" onSubmit={handleCreateEvent}>
-              <label>
-                Pico
-                <select value={form.picoSlug} onChange={(event) => handlePicoChange(event.target.value)}>
-                  <option value="">Selecione</option>
-                  {picos.map((pico) => (
-                    <option key={pico.id} value={pico.slug}>
-                      {pico.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                Titulo
-                <input
-                  value={form.title}
-                  onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-                />
-              </label>
-
-              <label>
-                Esporte
-                <select
-                  value={form.sportId}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, sportId: Number(event.target.value) }))
-                  }
-                >
-                  <option value="">Selecione</option>
-                  {sports.map((sport) => (
-                    <option key={sport.id} value={sport.id}>
-                      {sport.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                Data e hora
-                <input
-                  type="datetime-local"
-                  value={form.startsAt}
-                  onChange={(event) => setForm((current) => ({ ...current, startsAt: event.target.value }))}
-                />
-              </label>
-
-              <div className="two-column-grid">
-                <label>
-                  Entrada
-                  <input
-                    value={form.entryFeeCents}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        entryFeeCents: Number(event.target.value),
-                      }))
-                    }
-                  />
-                </label>
-
-                <label>
-                  Premio
-                  <input
-                    value={form.prizePoolCents}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        prizePoolCents: Number(event.target.value),
-                      }))
-                    }
-                  />
-                </label>
-              </div>
-
-              <label>
-                Descricao
-                <textarea
-                  rows="3"
-                  value={form.description}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, description: event.target.value }))
-                  }
-                />
-              </label>
-
-              {message ? <p className="success-text">{message}</p> : null}
-
-              <button className="primary-button full-width" disabled={saving || !form.picoSlug}>
-                {saving ? 'Publicando...' : 'Publicar evento'}
-              </button>
-            </form>
-          ) : (
-            <div className="empty-state">
-              <p className="muted-text">Entre para publicar amistosos, campeonatos e encontros.</p>
-              <Link className="primary-button small-link-button full-width" to="/entrar">
-                Entrar agora
-              </Link>
-            </div>
-          )}
-        </div>
-      </aside>
     </section>
   )
 }

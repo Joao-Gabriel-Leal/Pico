@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { apiRequest } from '../api'
 import { useAuth } from '../auth'
 import MediaAsset from '../components/MediaAsset'
+import SocialPostCard from '../components/SocialPostCard'
 import SportPicker from '../components/SportPicker'
 import { uploadSelectedFile } from '../utils/files'
 import { formatLocation, getCurrentPosition } from '../utils/geo'
@@ -14,11 +15,17 @@ function toggleId(list, id) {
 export default function ProfilePage() {
   const { user, token, refreshUser } = useAuth()
   const [sports, setSports] = useState([])
+  const [roles, setRoles] = useState([])
   const [feedItems, setFeedItems] = useState([])
   const [people, setPeople] = useState([])
+  const [moderation, setModeration] = useState({
+    pendingPicos: [],
+    pendingEvents: [],
+  })
   const [saving, setSaving] = useState(false)
   const [capturingLocation, setCapturingLocation] = useState(false)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const [moderating, setModerating] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [form, setForm] = useState({
@@ -28,25 +35,37 @@ export default function ProfilePage() {
     location: null,
     favoriteSportIds: [],
   })
+  const canModerate = user?.permissions?.includes('pico.approve') || user?.permissions?.includes('event.approve')
 
   async function loadPage() {
     if (!token) return
 
-    const [optionsPayload, feedPayload, peoplePayload] = await Promise.all([
+    const requests = [
       apiRequest('/api/auth/options'),
-      apiRequest('/api/feed?authorId=me', { token }),
+      apiRequest('/api/feed?authorId=me&limit=12&offset=0', { token }),
       apiRequest('/api/people', { token }),
-    ])
+    ]
+
+    if (canModerate) {
+      requests.push(apiRequest('/api/moderation', { token }))
+    }
+
+    const [optionsPayload, feedPayload, peoplePayload, moderationPayload] = await Promise.all(requests)
 
     setSports(optionsPayload.sports)
+    setRoles(optionsPayload.roles || [])
     setFeedItems(feedPayload.items)
     setPeople(peoplePayload.items)
+    setModeration({
+      pendingPicos: moderationPayload?.picos || [],
+      pendingEvents: moderationPayload?.events || [],
+    })
   }
 
   useEffect(() => {
     if (!token) return
     loadPage().catch((nextError) => setError(nextError.message))
-  }, [token])
+  }, [token, canModerate])
 
   useEffect(() => {
     if (!user) return
@@ -132,13 +151,66 @@ export default function ProfilePage() {
     }
   }
 
+  async function handleToggleRole(targetUserId, roleSlug, hasRole) {
+    setError('')
+
+    try {
+      await apiRequest(
+        hasRole ? `/api/users/${targetUserId}/roles/${roleSlug}` : `/api/users/${targetUserId}/roles`,
+        {
+          method: hasRole ? 'DELETE' : 'POST',
+          token,
+          body: hasRole ? undefined : { roleSlug },
+        },
+      )
+      await refreshUser()
+      await loadPage()
+    } catch (nextError) {
+      setError(nextError.message)
+    }
+  }
+
+  async function handleModerationAction(kind, targetId, action) {
+    setError('')
+    setMessage('')
+    setModerating(true)
+
+    try {
+      const route =
+        kind === 'pico'
+          ? `/api/moderation/picos/${targetId}/${action}`
+          : `/api/moderation/events/${targetId}/${action}`
+
+      await apiRequest(route, {
+        method: 'POST',
+        token,
+      })
+      await loadPage()
+      setMessage(action === 'approve' ? 'Item aprovado com sucesso.' : 'Item rejeitado.')
+    } catch (nextError) {
+      setError(nextError.message)
+    } finally {
+      setModerating(false)
+    }
+  }
+
+  function handlePostUpdated(updatedItem) {
+    setFeedItems((current) =>
+      current.map((item) => (item.id === updatedItem.id ? { ...item, ...updatedItem } : item)),
+    )
+  }
+
+  function handlePostDeleted(mediaId) {
+    setFeedItems((current) => current.filter((item) => item.id !== mediaId))
+  }
+
   if (!user) {
     return (
       <section className="simple-page">
         <div className="side-card">
           <h1>Entre para editar seu perfil</h1>
           <p className="muted-text">
-            O perfil agora mostra seguidores, seguindo e seus posts no feed.
+            O perfil agora mostra seguidores, seguindo, roles e seus posts no feed.
           </p>
           <Link className="primary-button small-link-button" to="/entrar">
             Entrar agora
@@ -170,6 +242,16 @@ export default function ProfilePage() {
                 <span className="status-pill">@{user.username}</span>
               </div>
 
+              {(user.roles || []).length ? (
+                <div className="chip-row">
+                  {user.roles.map((role) => (
+                    <span key={role.slug} className="pill">
+                      {role.name}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+
               <div className="profile-counts">
                 <article>
                   <strong>{user.mediaCount}</strong>
@@ -187,11 +269,32 @@ export default function ProfilePage() {
 
               <p className="hero-copy">{form.bio || 'Complete sua bio e comece a postar seus picos.'}</p>
               <p className="muted-text">{formatLocation(form.location)}</p>
+
+              <div className="inline-actions wrap-actions profile-action-row">
+                <button
+                  className="secondary-button small-link-button"
+                  type="button"
+                  onClick={() =>
+                    document.getElementById('profile-edit-card')?.scrollIntoView({
+                      behavior: 'smooth',
+                      block: 'start',
+                    })
+                  }
+                >
+                  Editar perfil
+                </button>
+                <Link className="primary-button small-link-button" to="/feed?compose=1">
+                  Nova publicacao
+                </Link>
+                <Link className="secondary-button small-link-button" to="/novo-pico">
+                  Novo pico
+                </Link>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="side-card">
+        <div className="side-card" id="profile-edit-card">
           <div className="section-title">
             <h2>Editar perfil</h2>
             <span>{user.createdPicoCount} picos criados</span>
@@ -267,33 +370,14 @@ export default function ProfilePage() {
         <div className="list-stack">
           {feedItems.length ? (
             feedItems.map((item) => (
-              <article key={item.id} className="post-card">
-                <div className="post-card-header">
-                  <div className="user-chip">
-                    <div className="avatar-circle avatar-mini">{user.displayName.slice(0, 1).toUpperCase()}</div>
-                    <div>
-                      <strong>{user.displayName}</strong>
-                      <p>{item.pico?.name}</p>
-                    </div>
-                  </div>
-                  <span className="pill">{item.mediaType === 'video' ? 'Video' : 'Foto'}</span>
-                </div>
-
-                <MediaAsset
-                  className={item.mediaType === 'video' ? 'feed-video' : 'cover-thumb'}
-                  src={item.fileUrl}
-                  alt={item.title}
-                  mediaType={item.mediaType}
-                />
-
-                <div className="post-card-body">
-                  <strong>{item.title}</strong>
-                  <div className="meta-row">
-                    <span>{item.likesCount} likes</span>
-                    <span>{item.viewsCount} views</span>
-                  </div>
-                </div>
-              </article>
+              <SocialPostCard
+                key={item.id}
+                item={item}
+                token={token}
+                currentUser={user}
+                onUpdated={handlePostUpdated}
+                onDeleted={handlePostDeleted}
+              />
             ))
           ) : (
             <div className="side-card empty-state">
@@ -307,6 +391,83 @@ export default function ProfilePage() {
 
       <aside className="page-column rail-column">
         <div className="side-card sticky-card">
+          {canModerate ? (
+            <>
+              <div className="section-title">
+                <h2>Fila de moderacao</h2>
+                <span>{moderation.pendingPicos.length + moderation.pendingEvents.length}</span>
+              </div>
+
+              <div className="list-stack compact-list">
+                {moderation.pendingPicos.map((item) => (
+                  <article key={item.id} className="list-item static-item">
+                    <div>
+                      <strong>{item.name}</strong>
+                      <p>Pico aguardando aprovacao</p>
+                    </div>
+                    <div className="post-card-actions">
+                      <Link className="secondary-button small-link-button" to={`/picos/${item.slug}`}>
+                        Abrir
+                      </Link>
+                      <button
+                        className="post-action-button active"
+                        type="button"
+                        disabled={moderating}
+                        onClick={() => handleModerationAction('pico', item.slug, 'approve')}
+                      >
+                        Aprovar
+                      </button>
+                      <button
+                        className="post-action-button"
+                        type="button"
+                        disabled={moderating}
+                        onClick={() => handleModerationAction('pico', item.slug, 'reject')}
+                      >
+                        Rejeitar
+                      </button>
+                    </div>
+                  </article>
+                ))}
+
+                {moderation.pendingEvents.map((item) => (
+                  <article key={item.id} className="list-item static-item">
+                    <div>
+                      <strong>{item.title}</strong>
+                      <p>Evento aguardando aprovacao</p>
+                    </div>
+                    <div className="post-card-actions">
+                      <Link className="secondary-button small-link-button" to={`/eventos/${item.id}`}>
+                        Abrir
+                      </Link>
+                      <button
+                        className="post-action-button active"
+                        type="button"
+                        disabled={moderating}
+                        onClick={() => handleModerationAction('evento', item.id, 'approve')}
+                      >
+                        Aprovar
+                      </button>
+                      <button
+                        className="post-action-button"
+                        type="button"
+                        disabled={moderating}
+                        onClick={() => handleModerationAction('evento', item.id, 'reject')}
+                      >
+                        Rejeitar
+                      </button>
+                    </div>
+                  </article>
+                ))}
+
+                {!moderation.pendingPicos.length && !moderation.pendingEvents.length ? (
+                  <p className="muted-text">Nada pendente na moderacao agora.</p>
+                ) : null}
+              </div>
+
+              <div className="section-divider" />
+            </>
+          ) : null}
+
           <div className="section-title">
             <h2>Pessoas no app</h2>
             <span>{people.length}</span>
@@ -325,24 +486,57 @@ export default function ProfilePage() {
                     <div>
                       <strong>{person.displayName}</strong>
                       <p>
-                        {person.followerCount} seguidores • {person.mediaCount} posts
+                        {person.followerCount} seguidores - {person.mediaCount} posts
                       </p>
                     </div>
                   </div>
 
-                  <button
-                    className={person.isFollowing ? 'secondary-button small-link-button' : 'primary-button small-link-button'}
-                    type="button"
-                    onClick={() => handleToggleFollow(person.id)}
-                  >
-                    {person.isFollowing ? 'Seguindo' : 'Seguir'}
-                  </button>
+                  <div className="follow-card-actions">
+                    <button
+                      className={person.isFollowing ? 'secondary-button small-link-button' : 'primary-button small-link-button'}
+                      type="button"
+                      onClick={() => handleToggleFollow(person.id)}
+                    >
+                      {person.isFollowing ? 'Seguindo' : 'Seguir'}
+                    </button>
+
+                    {(person.roles || []).length ? (
+                      <div className="chip-row role-chip-row">
+                        {person.roles.map((role) => (
+                          <span key={role.slug} className="pill">
+                            {role.name}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {user.permissions?.includes('role.assign') ? (
+                      <div className="role-toggle-grid">
+                        {roles.map((role) => {
+                          const hasRole = person.roles?.some((item) => item.slug === role.slug)
+                          return (
+                            <button
+                              key={role.slug}
+                              className={hasRole ? 'post-action-button active' : 'post-action-button'}
+                              type="button"
+                              onClick={() => handleToggleRole(person.id, role.slug, hasRole)}
+                            >
+                              {role.name}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
                 </article>
               ))
             ) : (
               <p className="muted-text">Quando outros usuarios entrarem, eles aparecem aqui.</p>
             )}
           </div>
+
+          {error ? <p className="error-text">{error}</p> : null}
+          {message ? <p className="success-text">{message}</p> : null}
         </div>
       </aside>
     </section>
