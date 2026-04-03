@@ -1,0 +1,247 @@
+import { useEffect, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { apiRequest } from '../api'
+import { useAuth } from '../auth'
+import { uploadSelectedFile } from '../utils/files'
+import { formatLocation, getCurrentPosition } from '../utils/geo'
+
+export default function NewPicoPage() {
+  const navigate = useNavigate()
+  const { token, user } = useAuth()
+  const [sports, setSports] = useState([])
+  const [loadingLocation, setLoadingLocation] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [uploadingCover, setUploadingCover] = useState(false)
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({
+    name: '',
+    primarySportId: '',
+    description: '',
+    latitude: '',
+    longitude: '',
+    statusText: '',
+    conditionLabel: '',
+    coverImageUrl: '',
+  })
+
+  useEffect(() => {
+    async function loadOptions() {
+      const payload = await apiRequest('/api/auth/options')
+      setSports(payload.sports)
+    }
+
+    loadOptions()
+  }, [])
+
+  useEffect(() => {
+    if (!user?.location) return
+
+    setForm((current) => ({
+      ...current,
+      latitude: current.latitude || Number(user.location.latitude).toFixed(6),
+      longitude: current.longitude || Number(user.location.longitude).toFixed(6),
+    }))
+  }, [user])
+
+  async function useCurrentLocation() {
+    setLoadingLocation(true)
+    setError('')
+
+    try {
+      const location = await getCurrentPosition()
+      setForm((current) => ({
+        ...current,
+        latitude: location.latitude.toFixed(6),
+        longitude: location.longitude.toFixed(6),
+      }))
+    } catch (nextError) {
+      setError(nextError.message)
+    } finally {
+      setLoadingLocation(false)
+    }
+  }
+
+  async function handleCoverChange(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setUploadingCover(true)
+    setError('')
+
+    try {
+      const uploadedUrl = await uploadSelectedFile(file, {
+        token,
+        kind: 'image',
+      })
+      setForm((current) => ({ ...current, coverImageUrl: uploadedUrl }))
+    } catch (nextError) {
+      setError(nextError.message)
+    } finally {
+      setUploadingCover(false)
+      event.target.value = ''
+    }
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    setError('')
+    setSaving(true)
+
+    try {
+      const payload = await apiRequest('/api/picos', {
+        method: 'POST',
+        token,
+        body: form,
+      })
+      navigate(`/picos/${payload.item.slug}`)
+    } catch (nextError) {
+      setError(nextError.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!user) {
+    return (
+      <section className="simple-page">
+        <div className="side-card">
+          <h1>Entre para marcar um pico</h1>
+          <p className="muted-text">
+            A criacao agora usa localizacao exata do aparelho e foto do pico direto no navegador.
+          </p>
+          <Link className="primary-button small-link-button" to="/entrar">
+            Entrar para criar pico
+          </Link>
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <section className="simple-page">
+      <div className="side-card">
+        <div className="section-title">
+          <div>
+            <p className="eyebrow">Novo pico</p>
+            <h1>Marque um lugar de verdade no mapa</h1>
+          </div>
+          <button className="secondary-button" onClick={useCurrentLocation} type="button">
+            {loadingLocation ? 'Lendo localizacao...' : 'Usar minha localizacao exata'}
+          </button>
+        </div>
+
+        <form className="form-card" onSubmit={handleSubmit}>
+          <label>
+            Nome do pico
+            <input
+              value={form.name}
+              onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+            />
+          </label>
+
+          <label>
+            Esporte principal
+            <select
+              value={form.primarySportId}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, primarySportId: Number(event.target.value) }))
+              }
+            >
+              <option value="">Selecione</option>
+              {sports.map((sport) => (
+                <option key={sport.id} value={sport.id}>
+                  {sport.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Descricao
+            <textarea
+              rows="4"
+              value={form.description}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, description: event.target.value }))
+              }
+            />
+          </label>
+
+          <div className="location-box">
+            <div>
+              <strong>Coordenadas do pico</strong>
+              <p>
+                {form.latitude && form.longitude
+                  ? formatLocation({ latitude: form.latitude, longitude: form.longitude })
+                  : 'Use sua localizacao exata ou preencha manualmente abaixo'}
+              </p>
+            </div>
+          </div>
+
+          <div className="two-column-grid">
+            <label>
+              Latitude
+              <input
+                value={form.latitude}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, latitude: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              Longitude
+              <input
+                value={form.longitude}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, longitude: event.target.value }))
+                }
+              />
+            </label>
+          </div>
+
+          <div className="two-column-grid">
+            <label>
+              Status atual
+              <input
+                value={form.statusText}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, statusText: event.target.value }))
+                }
+                placeholder="ex: seco e movimentado"
+              />
+            </label>
+
+            <label>
+              Selo rapido
+              <input
+                value={form.conditionLabel}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, conditionLabel: event.target.value }))
+                }
+                placeholder="ex: quente"
+              />
+            </label>
+          </div>
+
+          <label>
+            Foto de capa do pico
+            <input type="file" accept="image/*" onChange={handleCoverChange} />
+          </label>
+
+          {form.coverImageUrl ? (
+            <img className="image-preview" src={form.coverImageUrl} alt="Capa do pico" />
+          ) : null}
+
+          {error ? <p className="error-text">{error}</p> : null}
+
+          <button
+            className="primary-button full-width"
+            disabled={saving || uploadingCover || !form.latitude || !form.longitude}
+          >
+            {saving ? 'Salvando...' : 'Criar pico'}
+          </button>
+        </form>
+      </div>
+    </section>
+  )
+}
