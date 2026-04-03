@@ -151,7 +151,6 @@ function mapPublicUser(user) {
     avatarUrl: user.avatarUrl,
     bio: user.bio,
     favoriteSports: user.favoriteSports,
-    roles: user.roles,
     createdPicoCount: user.createdPicoCount,
     followerCount: user.followerCount,
     followingCount: user.followingCount,
@@ -495,6 +494,8 @@ async function getPicoSummaryRowById(client, picoId, currentUserId = null) {
         coalesce(votes.total, 0)::int as vote_count,
         coalesce(media.total, 0)::int as media_count,
         coalesce(gallery.total, 0)::int as gallery_count,
+        coalesce(follows.total, 0)::int as follower_count,
+        coalesce(visits.total, 0)::int as visit_count,
         coalesce(events.total, 0)::int as upcoming_events_count,
         exists(
           select 1
@@ -502,6 +503,18 @@ async function getPicoSummaryRowById(client, picoId, currentUserId = null) {
           where pico_vote.pico_id = pico.id
             and pico_vote.user_id = $2::uuid
         ) as has_voted,
+        exists(
+          select 1
+          from pico_follow
+          where pico_follow.pico_id = pico.id
+            and pico_follow.user_id = $2::uuid
+        ) as is_following,
+        exists(
+          select 1
+          from pico_visit
+          where pico_visit.pico_id = pico.id
+            and pico_visit.user_id = $2::uuid
+        ) as is_visited,
         coalesce(nullif(pico.cover_image_url, ''), preview.file_url, '') as preview_photo,
         active_campaign.id as active_campaign_id,
         active_campaign.title as active_campaign_title,
@@ -532,6 +545,16 @@ async function getPicoSummaryRowById(client, picoId, currentUserId = null) {
         from pico_event
         where pico_event.pico_id = pico.id
       ) events on true
+      left join lateral (
+        select count(*)::int as total
+        from pico_follow
+        where pico_follow.pico_id = pico.id
+      ) follows on true
+      left join lateral (
+        select count(*)::int as total
+        from pico_visit
+        where pico_visit.pico_id = pico.id
+      ) visits on true
       left join lateral (
         select file_url
         from pico_media
@@ -582,9 +605,13 @@ async function buildPicoSummary(client, picoId, currentUserId = null) {
     creator,
     mediaCount: Number(row.media_count || 0),
     galleryCount: Number(row.gallery_count || 0),
+    followerCount: Number(row.follower_count || 0),
+    visitCount: Number(row.visit_count || 0),
     upcomingEventsCount: Number(row.upcoming_events_count || 0),
     voteCount: Number(row.vote_count || 0),
     hasVoted: Boolean(row.has_voted),
+    isFollowing: Boolean(row.is_following),
+    isVisited: Boolean(row.is_visited),
     previewPhoto: row.preview_photo || '',
     coverImageUrl: row.cover_image_url || '',
     permissions,
@@ -747,6 +774,28 @@ async function listPicoVoters(client, picoId, currentUserId = null) {
   ).filter(Boolean)
 
   return people
+}
+
+async function listPicosForUserRelation(client, tableName, userId, currentUserId = null) {
+  const allowedTables = new Set(['pico_vote', 'pico_follow', 'pico_visit'])
+  if (!allowedTables.has(tableName)) return []
+
+  const { rows } = await client.query(
+    `
+      select pico_id
+      from ${tableName}
+      where user_id = $1
+      order by created_at desc
+      limit 24
+    `,
+    [userId],
+  )
+
+  const items = (
+    await Promise.all(rows.map((row) => buildPicoSummary(client, row.pico_id, currentUserId)))
+  ).filter(Boolean)
+
+  return items.filter((item) => item.approvalStatus === 'approved')
 }
 
 async function listMediaLikes(client, mediaId, currentUserId = null) {
@@ -1504,6 +1553,26 @@ export async function createRepository() {
         if (left.isFollowing !== right.isFollowing) return left.isFollowing ? -1 : 1
         return left.displayName.localeCompare(right.displayName)
       })
+    },
+
+    async getPersonProfile(targetUserId, currentUserId = null) {
+      const person = await getPublicUserViewById({ query }, targetUserId, currentUserId)
+      if (!person) return null
+
+      const [postsPayload, likedPicos, followedPicos, visitedPicos] = await Promise.all([
+        this.listFeed({ authorId: targetUserId, limit: 18, offset: 0 }, currentUserId),
+        listPicosForUserRelation({ query }, 'pico_vote', targetUserId, currentUserId),
+        listPicosForUserRelation({ query }, 'pico_follow', targetUserId, currentUserId),
+        listPicosForUserRelation({ query }, 'pico_visit', targetUserId, currentUserId),
+      ])
+
+      return {
+        person,
+        posts: postsPayload.items,
+        likedPicos,
+        followedPicos,
+        visitedPicos,
+      }
     },
 
     async listModerationQueue(userId) {
@@ -2737,6 +2806,64 @@ export async function createRepository() {
           await client.query(
             `
               insert into pico_vote (pico_id, user_id)
+              values ($1, $2)
+            `,
+            [picoId, userId],
+          )
+        }
+
+        return buildPicoDetail(client, picoId, userId)
+      })
+    },
+
+    async togglePicoFollow(userId, slug) {
+      return withTransaction(async (client) => {
+        const picoId = await getPicoIdBySlug(client, slug)
+        if (!picoId) throw new Error('Pico nao encontrado.')
+
+        const deleted = await client.query(
+          `
+            delete from pico_follow
+            where pico_id = $1
+              and user_id = $2
+            returning pico_id
+          `,
+          [picoId, userId],
+        )
+
+        if (!deleted.rows.length) {
+          await client.query(
+            `
+              insert into pico_follow (pico_id, user_id)
+              values ($1, $2)
+            `,
+            [picoId, userId],
+          )
+        }
+
+        return buildPicoDetail(client, picoId, userId)
+      })
+    },
+
+    async togglePicoVisit(userId, slug) {
+      return withTransaction(async (client) => {
+        const picoId = await getPicoIdBySlug(client, slug)
+        if (!picoId) throw new Error('Pico nao encontrado.')
+
+        const deleted = await client.query(
+          `
+            delete from pico_visit
+            where pico_id = $1
+              and user_id = $2
+            returning pico_id
+          `,
+          [picoId, userId],
+        )
+
+        if (!deleted.rows.length) {
+          await client.query(
+            `
+              insert into pico_visit (pico_id, user_id)
               values ($1, $2)
             `,
             [picoId, userId],

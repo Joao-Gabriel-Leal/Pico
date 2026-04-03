@@ -11,6 +11,7 @@ import NewPicoPage from './pages/NewPicoPage'
 import PicoPage from './pages/PicoPage'
 import ProfilePage from './pages/ProfilePage'
 import SearchPage from './pages/SearchPage'
+import UserProfilePage from './pages/UserProfilePage'
 
 export default function App() {
   return (
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="/feed" element={<FeedPage />} />
           <Route path="/picos/:slug" element={<PicoPage />} />
           <Route path="/perfil" element={<ProfilePage />} />
+          <Route path="/pessoas/:userId" element={<UserProfilePage />} />
           <Route path="/novo-pico" element={<NewPicoPage />} />
         </Route>
       </Routes>

@@ -228,6 +228,18 @@ app.get('/api/people', requireAuth, async (request, response) => {
   })
 })
 
+app.get('/api/people/:userId', async (request, response) => {
+  const currentUser = await getAuthenticatedUser(request)
+  const item = await repository.getPersonProfile(request.params.userId, currentUser?.id || null)
+
+  if (!item) {
+    response.status(404).json({ error: 'Perfil nao encontrado.' })
+    return
+  }
+
+  response.json(item)
+})
+
 app.get('/api/moderation', requireAuth, async (request, response) => {
   try {
     response.json(await repository.listModerationQueue(request.currentUser.id))
@@ -478,6 +490,26 @@ app.post('/api/picos/:slug/vote', requireAuth, async (request, response) => {
   try {
     response.status(201).json({
       item: await repository.toggleVote(request.currentUser.id, request.params.slug),
+    })
+  } catch (error) {
+    response.status(400).json({ error: error.message })
+  }
+})
+
+app.post('/api/picos/:slug/follow', requireAuth, async (request, response) => {
+  try {
+    response.status(201).json({
+      item: await repository.togglePicoFollow(request.currentUser.id, request.params.slug),
+    })
+  } catch (error) {
+    response.status(400).json({ error: error.message })
+  }
+})
+
+app.post('/api/picos/:slug/visit', requireAuth, async (request, response) => {
+  try {
+    response.status(201).json({
+      item: await repository.togglePicoVisit(request.currentUser.id, request.params.slug),
     })
   } catch (error) {
     response.status(400).json({ error: error.message })

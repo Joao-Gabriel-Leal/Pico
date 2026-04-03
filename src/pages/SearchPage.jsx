@@ -169,6 +169,9 @@ export default function SearchPage() {
                   </div>
 
                   <div className="inline-actions wrap-actions">
+                    <Link className="secondary-button small-link-button" to={`/pessoas/${person.id}`}>
+                      Perfil
+                    </Link>
                     <button
                       className={person.isFollowing ? 'secondary-button small-link-button' : 'primary-button small-link-button'}
                       type="button"

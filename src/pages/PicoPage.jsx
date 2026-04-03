@@ -97,6 +97,28 @@ export default function PicoPage() {
     }
   }
 
+  async function handleTogglePicoFollow() {
+    setMessage('')
+    setError('')
+    try {
+      await apiRequest(`/api/picos/${slug}/follow`, { method: 'POST', token })
+      await refreshDetail()
+    } catch (nextError) {
+      setError(nextError.message)
+    }
+  }
+
+  async function handleTogglePicoVisit() {
+    setMessage('')
+    setError('')
+    try {
+      await apiRequest(`/api/picos/${slug}/visit`, { method: 'POST', token })
+      await refreshDetail()
+    } catch (nextError) {
+      setError(nextError.message)
+    }
+  }
+
   async function handleContribution(event) {
     event.preventDefault()
     setMessage('')
@@ -292,6 +314,8 @@ export default function PicoPage() {
                 {detail.permissions?.isPicoAdmin ? <span className="pill">Administrador do pico</span> : null}
                 {detail.approvalStatus !== 'approved' ? <span className="pill">Aguardando aprovacao</span> : null}
                 {user ? <button className="secondary-button" type="button" onClick={handleVote}>{detail.hasVoted ? 'Tirar curtida' : 'Curtir pico'}</button> : <Link className="secondary-button small-link-button" to="/entrar">Entrar para votar</Link>}
+                {user ? <button className={detail.isFollowing ? 'secondary-button' : 'ghost-button'} type="button" onClick={handleTogglePicoFollow}>{detail.isFollowing ? 'Seguindo pico' : 'Seguir pico'}</button> : null}
+                {user ? <button className={detail.isVisited ? 'secondary-button' : 'ghost-button'} type="button" onClick={handleTogglePicoVisit}>{detail.isVisited ? 'Ja andei aqui' : 'Marcar que ja andei'}</button> : null}
                 {detail.permissions?.canPost ? <button className="primary-button small-link-button" type="button" onClick={() => { setShowPostComposer((current) => !current); setShowEventComposer(false) }}>{showPostComposer ? 'Fechar post' : 'Nova publicacao'}</button> : null}
                 {(detail.permissions?.canManageEvents || user?.permissions?.includes('event.submit')) ? <button className="secondary-button small-link-button" type="button" onClick={() => { setShowEventComposer((current) => !current); setShowPostComposer(false) }}>{showEventComposer ? 'Fechar evento' : detail.permissions?.canManageEvents ? 'Novo evento' : 'Sugerir evento'}</button> : null}
               </div>
@@ -338,7 +362,7 @@ export default function PicoPage() {
         ) : null}
 
         <div className="two-card-grid">
-          <div className="side-card"><div className="section-title"><h2>Resumo</h2><span>{detail.statusText}</span></div><div className="stats-stack"><article><span>Galeria do pico</span><strong>{detail.galleryMedia.length}</strong></article><article><span>Posts no feed</span><strong>{detail.feedPosts.length}</strong></article><article><span>Eventos</span><strong>{detail.events.length}</strong></article></div></div>
+          <div className="side-card"><div className="section-title"><h2>Resumo</h2><span>{detail.statusText}</span></div><div className="stats-stack"><article><span>Galeria</span><strong>{detail.galleryMedia.length}</strong></article><article><span>Posts</span><strong>{detail.feedPosts.length}</strong></article><article><span>Eventos</span><strong>{detail.events.length}</strong></article><article><span>Seguidores</span><strong>{detail.followerCount}</strong></article><article><span>Ja andaram</span><strong>{detail.visitCount}</strong></article></div></div>
           <div className="side-card"><div className="section-title"><h2>Quem curtiu</h2><span>{detail.likedBy.length}</span></div><div className="list-stack compact-list">{detail.likedBy.length ? detail.likedBy.map((person) => <div key={person.id} className="list-item static-item"><div className="user-chip">{person.avatarUrl ? <MediaAsset className="avatar-circle avatar-mini" src={person.avatarUrl} alt={person.displayName} /> : <div className="avatar-circle avatar-mini">{person.displayName.slice(0, 1).toUpperCase()}</div>}<div><strong>{person.displayName}</strong><p>@{person.username}</p></div></div></div>) : <p className="muted-text">Ainda nao ha curtidas registradas nesse pico.</p>}</div></div>
         </div>
 

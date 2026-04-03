@@ -208,7 +208,6 @@ export default function ProfilePage() {
                   <article><strong>{user.followingCount}</strong><span>seguindo</span></article>
                 </div>
                 <p className="hero-copy">{form.bio || 'Conte quem voce e, quais esportes voce curte e quais picos faz parte.'}</p>
-                {(user.roles || []).length ? <div className="chip-row">{user.roles.map((role) => <span key={role.slug} className="pill">{role.name}</span>)}</div> : null}
                 <div className="inline-actions wrap-actions">
                   <button className="secondary-button small-link-button" type="button" onClick={() => setShowEdit((current) => !current)}>{showEdit ? 'Fechar edicao' : 'Editar perfil'}</button>
                   <Link className="primary-button small-link-button" to="/feed?compose=1">Nova publicacao</Link>
@@ -327,9 +326,11 @@ export default function ProfilePage() {
                   <div><strong>{person.displayName}</strong><p>{person.followerCount} seguidores - {person.mediaCount} posts</p></div>
                 </div>
                 <div className="follow-card-actions">
+                  <Link className="secondary-button small-link-button" to={`/pessoas/${person.id}`}>
+                    Perfil
+                  </Link>
                   <button className={person.isFollowing ? 'secondary-button small-link-button' : 'primary-button small-link-button'} type="button" onClick={() => handleToggleFollow(person.id)}>{person.isFollowing ? 'Seguindo' : 'Seguir'}</button>
-                  {(person.roles || []).length ? <div className="chip-row role-chip-row">{person.roles.map((role) => <span key={role.slug} className="pill">{role.name}</span>)}</div> : null}
-                  {user.permissions?.includes('role.assign') ? <div className="role-toggle-grid">{roles.map((role) => { const hasRole = person.roles?.some((item) => item.slug === role.slug); return <button key={role.slug} className={hasRole ? 'post-action-button active' : 'post-action-button'} type="button" onClick={() => handleToggleRole(person.id, role.slug, hasRole)}>{role.name}</button> })}</div> : null}
+                  {user.permissions?.includes('role.assign') ? <div className="role-toggle-grid">{roles.filter((role) => role.slug !== 'usuario').map((role) => { const hasRole = person.roles?.some((item) => item.slug === role.slug); return <button key={role.slug} className={hasRole ? 'post-action-button active' : 'post-action-button'} type="button" onClick={() => handleToggleRole(person.id, role.slug, hasRole)}>{role.name}</button> })}</div> : null}
                 </div>
               </article>
             )) : <p className="muted-text">Quando outros usuarios entrarem, eles aparecem aqui.</p>}

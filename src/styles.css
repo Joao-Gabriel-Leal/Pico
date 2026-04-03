@@ -118,6 +118,10 @@ label {
   backdrop-filter: blur(18px);
 }
 
+.topbar-brand {
+  font-size: 1.45rem;
+}
+
 .topbar-title {
   display: block;
   font-size: 1rem;
@@ -237,7 +241,7 @@ label {
 .side-card,
 .auth-card,
 .post-card {
-  padding: 20px;
+  padding: 18px;
 }
 
 .toolbar-card,
@@ -258,7 +262,7 @@ label {
 }
 
 .hero-card h1 {
-  font-size: clamp(1.9rem, 4vw, 2.8rem);
+  font-size: clamp(1.55rem, 3.4vw, 2.35rem);
 }
 
 .hero-copy,
@@ -979,7 +983,7 @@ label {
   bottom: 0;
   z-index: 40;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 4px;
   padding: 10px 12px 14px;
   background: rgba(255, 255, 255, 0.96);
@@ -996,7 +1000,7 @@ label {
   padding: 10px 8px;
   color: var(--text-soft);
   font-weight: 700;
-  font-size: 0.74rem;
+  font-size: 0.7rem;
 }
 
 .mobile-link-dot,
@@ -1006,6 +1010,30 @@ label {
   border-radius: 999px;
   background: currentColor;
   opacity: 0.35;
+}
+
+.mobile-link-avatar,
+.profile-nav-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ff5a2a, #0095f6);
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.78rem;
+}
+
+.profile-nav-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fff;
 }
 
 .mobile-link.active {
@@ -1426,6 +1454,10 @@ label {
   .topbar-actions .secondary-button {
     display: none;
   }
+
+  .topbar-brand {
+    font-size: 1.25rem;
+  }
 }
 
 @media (max-width: 719px) {
@@ -1459,7 +1491,13 @@ label {
   .primary-button,
   .secondary-button,
   .small-link-button {
-    width: 100%;
+    width: auto;
+  }
+
+  .topbar-actions {
+    width: auto;
+    flex-direction: row;
+    align-items: center;
   }
 
   .inline-stats {

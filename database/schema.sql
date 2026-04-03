@@ -106,6 +106,20 @@ create table if not exists pico_vote (
   primary key (pico_id, user_id)
 );
 
+create table if not exists pico_follow (
+  pico_id uuid not null references pico(id) on delete cascade,
+  user_id uuid not null references app_user(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (pico_id, user_id)
+);
+
+create table if not exists pico_visit (
+  pico_id uuid not null references pico(id) on delete cascade,
+  user_id uuid not null references app_user(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (pico_id, user_id)
+);
+
 create table if not exists pico_media (
   id uuid primary key default gen_random_uuid(),
   pico_id uuid not null references pico(id) on delete cascade,
@@ -214,6 +228,8 @@ create index if not exists auth_session_user_id_idx on auth_session (user_id);
 create index if not exists pico_created_at_idx on pico (created_at desc);
 create index if not exists pico_location_idx on pico (latitude, longitude);
 create index if not exists pico_vote_user_id_idx on pico_vote (user_id);
+create index if not exists pico_follow_user_id_idx on pico_follow (user_id);
+create index if not exists pico_visit_user_id_idx on pico_visit (user_id);
 create index if not exists pico_admin_user_id_idx on pico_admin (user_id);
 create index if not exists pico_media_pico_created_at_idx on pico_media (pico_id, created_at desc);
 create index if not exists pico_media_user_created_at_idx on pico_media (user_id, created_at desc);

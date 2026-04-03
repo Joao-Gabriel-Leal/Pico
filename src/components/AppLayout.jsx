@@ -4,9 +4,9 @@ import { useAuth } from '../auth'
 
 const navItems = [
   { to: '/mapa', label: 'Mapa', shortLabel: 'Mapa' },
-  { to: '/eventos', label: 'Eventos', shortLabel: 'Eventos' },
-  { to: '/pesquisa', label: 'Pesquisa', shortLabel: 'Buscar' },
-  { to: '/conversas', label: 'Conversas', shortLabel: 'DM' },
+  { to: '/eventos', label: 'Eventos', shortLabel: 'Agenda' },
+  { to: '/pesquisa', label: 'Buscar', shortLabel: 'Buscar' },
+  { to: '/conversas', label: 'DM', shortLabel: 'DM' },
   { to: '/feed', label: 'Feed', shortLabel: 'Feed' },
 ]
 
@@ -78,21 +78,17 @@ export default function AppLayout() {
 
       <div className="app-main-frame">
         <header className="app-topbar">
-          <div>
-            <p className="eyebrow">Mapa, eventos, DM e feed</p>
-            <strong className="topbar-title">Experiencia estilo Instagram, feita para pico.</strong>
-          </div>
+          <Link className="brand-link topbar-brand" to="/mapa">
+            PicoLiga
+          </Link>
 
           <div className="topbar-actions">
             <button className="secondary-button small-link-button topbar-action" onClick={() => setShowCreateMenu((current) => !current)}>
               +
             </button>
-            <Link className="secondary-button small-link-button topbar-action" to="/novo-pico">
-              Novo pico
-            </Link>
             {user ? (
-              <Link className="secondary-button small-link-button topbar-action" to="/perfil">
-                Perfil
+              <Link className="profile-nav-button" to="/perfil" aria-label="Abrir perfil">
+                <span className="profile-nav-avatar">{user.displayName.slice(0, 1).toUpperCase()}</span>
               </Link>
             ) : (
               <Link className="primary-button small-link-button topbar-action" to="/entrar">
@@ -134,6 +130,12 @@ export default function AppLayout() {
             <span>{item.shortLabel}</span>
           </NavLink>
         ))}
+        {user ? (
+          <NavLink to="/perfil" className={({ isActive }) => (isActive ? 'mobile-link active' : 'mobile-link')}>
+            <span className="mobile-link-avatar">{user.displayName.slice(0, 1).toUpperCase()}</span>
+            <span>Perfil</span>
+          </NavLink>
+        ) : null}
       </nav>
     </div>
   )
