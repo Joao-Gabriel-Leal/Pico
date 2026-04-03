@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/(entrar|explorar|mapa|eventos|eventos/(.*)|pesquisa|conversas|feed|videos|atividade|picos/(.*)|perfil|pessoas/(.*)|novo-pico)",
+      "destination": "/index.html"
+    }
+  ]
+}

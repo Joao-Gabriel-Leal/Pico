@@ -183,9 +183,6 @@ export default function NewPicoPage() {
       <section className="simple-page">
         <div className="side-card">
           <h1>Entre para marcar um pico</h1>
-          <p className="muted-text">
-            A criacao agora usa localizacao exata do aparelho ou um ponto escolhido no mapa.
-          </p>
           <Link className="primary-button small-link-button" to="/entrar">
             Entrar para criar pico
           </Link>
@@ -198,10 +195,7 @@ export default function NewPicoPage() {
     return (
       <section className="simple-page">
         <div className="side-card">
-          <h1>Seu perfil nao pode criar picos</h1>
-          <p className="muted-text">
-            No sistema novo, a criacao de picos depende da role e das permissoes do usuario.
-          </p>
+          <h1>Sem permissao para criar pico</h1>
           <Link className="primary-button small-link-button" to="/perfil">
             Voltar para perfil
           </Link>
@@ -215,18 +209,13 @@ export default function NewPicoPage() {
       <div className="side-card">
         <div className="section-title">
           <div>
-            <p className="eyebrow">Novo pico</p>
-            <h1>Marque um pico sem expor dado tecnico na tela</h1>
+            <p className="eyebrow">PicoMap</p>
+            <h1>Novo pico</h1>
           </div>
           <button className="secondary-button" onClick={useCurrentLocation} type="button">
             {loadingLocation ? 'Lendo localizacao...' : 'Usar minha localizacao exata'}
           </button>
         </div>
-
-        <p className="muted-text">
-          As fotos e videos desta tela sao so de apresentacao do pico. O feed publico recebe
-          apenas as publicacoes que a galera postar depois no pico.
-        </p>
 
         <form className="form-card" onSubmit={handleSubmit}>
           <label>

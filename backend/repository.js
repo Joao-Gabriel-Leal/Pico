@@ -61,6 +61,25 @@ function normalizeUsername(value) {
   return normalizeString(value).toLowerCase()
 }
 
+function encodeCursor(payload) {
+  return Buffer.from(JSON.stringify(payload)).toString('base64url')
+}
+
+function decodeCursor(value) {
+  if (!value) return null
+
+  try {
+    const parsed = JSON.parse(Buffer.from(String(value), 'base64url').toString('utf8'))
+    if (!parsed?.createdAt || !parsed?.id) return null
+    return {
+      createdAt: new Date(parsed.createdAt).toISOString(),
+      id: parsed.id,
+    }
+  } catch {
+    return null
+  }
+}
+
 function normalizeLocation(location) {
   if (!location) return null
 
@@ -145,6 +164,7 @@ function mapUserViewRow(row) {
     mediaCount: Number(row.media_count || 0),
     isFollowing: Boolean(row.is_following),
     followsYou: Boolean(row.follows_you),
+    isMutual: Boolean(row.is_following && row.follows_you),
   }
 }
 
@@ -164,6 +184,7 @@ function mapPublicUser(user) {
     mediaCount: user.mediaCount,
     isFollowing: user.isFollowing,
     followsYou: user.followsYou,
+    isMutual: user.isMutual,
   }
 }
 
@@ -1207,11 +1228,124 @@ async function buildEventSummary(client, row, currentUserId = null) {
   }
 }
 
+async function buildSharedMediaPreview(client, mediaId, currentUserId = null) {
+  if (!mediaId) return null
+
+  const row = await getMediaRowById(client, mediaId)
+  if (!row) return null
+
+  const [author, picoSummary] = await Promise.all([
+    getPublicUserViewById(client, row.user_id, currentUserId),
+    buildPicoSummary(client, row.pico_id, currentUserId),
+  ])
+
+  if (!picoSummary) return null
+
+  return {
+    id: row.id,
+    title: row.title,
+    mediaType: row.media_type,
+    fileUrl: row.file_url,
+    createdAt: new Date(row.created_at).toISOString(),
+    author,
+    pico: toCompactPico(picoSummary),
+  }
+}
+
+async function getMessageReactionSummary(client, messageId, currentUserId = null) {
+  const [{ rows: countRows }, { rows: ownRows }] = await Promise.all([
+    client.query(
+      `
+        select count(*)::int as total
+        from direct_message_reaction
+        where message_id = $1
+          and reaction = 'heart'
+      `,
+      [messageId],
+    ),
+    currentUserId
+      ? client.query(
+          `
+            select 1
+            from direct_message_reaction
+            where message_id = $1
+              and user_id = $2
+              and reaction = 'heart'
+          `,
+          [messageId, currentUserId],
+        )
+      : Promise.resolve({ rows: [] }),
+  ])
+
+  return {
+    heartCount: Number(countRows[0]?.total || 0),
+    hasHeart: Boolean(ownRows[0]),
+  }
+}
+
+async function areUsersMutuals(client, leftUserId, rightUserId) {
+  const { rows } = await client.query(
+    `
+      select
+        exists(
+          select 1
+          from user_follow
+          where follower_id = $1
+            and following_id = $2
+        ) as follows,
+        exists(
+          select 1
+          from user_follow
+          where follower_id = $2
+            and following_id = $1
+        ) as follows_back
+    `,
+    [leftUserId, rightUserId],
+  )
+
+  return Boolean(rows[0]?.follows && rows[0]?.follows_back)
+}
+
+async function ensureMutualRecipients(client, currentUserId, participantUserIds) {
+  const uniqueIds = [...new Set((participantUserIds || []).filter(Boolean))]
+    .map((item) => String(item))
+    .filter((item) => item !== currentUserId)
+
+  if (!uniqueIds.length) {
+    throw new Error('Escolha pelo menos uma pessoa para conversar.')
+  }
+
+  const { rows } = await client.query(
+    `
+      select id
+      from app_user
+      where id = any($1::uuid[])
+    `,
+    [uniqueIds],
+  )
+
+  if (rows.length !== uniqueIds.length) {
+    throw new Error('Um ou mais perfis selecionados nao existem mais.')
+  }
+
+  const checks = await Promise.all(uniqueIds.map((participantId) => areUsersMutuals(client, currentUserId, participantId)))
+
+  if (checks.some((value) => !value)) {
+    throw new Error('So e possivel abrir conversas com amizades mutuas.')
+  }
+
+  return uniqueIds
+}
+
 async function buildConversationSummary(client, conversationId, currentUserId) {
   const { rows } = await client.query(
     `
       select
         direct_conversation.id,
+        direct_conversation.is_group,
+        direct_conversation.title,
+        direct_conversation.avatar_url,
+        direct_conversation.created_by,
         direct_conversation.created_at,
         direct_conversation.updated_at,
         viewer_participant.last_read_at as viewer_last_read_at,
@@ -1221,6 +1355,9 @@ async function buildConversationSummary(client, conversationId, currentUserId) {
         last_message.id as last_message_id,
         last_message.sender_id as last_message_sender_id,
         last_message.text_content as last_message_text,
+        last_message.message_type as last_message_type,
+        last_message.shared_media_id as last_message_shared_media_id,
+        last_message.preview_text as last_message_preview_text,
         last_message.created_at as last_message_created_at
       from direct_conversation
       join direct_conversation_participant
@@ -1241,7 +1378,7 @@ async function buildConversationSummary(client, conversationId, currentUserId) {
           and direct_message.created_at > viewer_participant.last_read_at
       ) unread_count on true
       left join lateral (
-        select id, sender_id, text_content, created_at
+        select id, sender_id, text_content, message_type, shared_media_id, preview_text, created_at
         from direct_message
         where direct_message.conversation_id = direct_conversation.id
         order by created_at desc
@@ -1250,6 +1387,10 @@ async function buildConversationSummary(client, conversationId, currentUserId) {
       where direct_conversation.id = $1
       group by
         direct_conversation.id,
+        direct_conversation.is_group,
+        direct_conversation.title,
+        direct_conversation.avatar_url,
+        direct_conversation.created_by,
         direct_conversation.created_at,
         direct_conversation.updated_at,
         viewer_participant.last_read_at,
@@ -1258,6 +1399,9 @@ async function buildConversationSummary(client, conversationId, currentUserId) {
         last_message.id,
         last_message.sender_id,
         last_message.text_content,
+        last_message.message_type,
+        last_message.shared_media_id,
+        last_message.preview_text,
         last_message.created_at
     `,
     [conversationId, currentUserId],
@@ -1267,10 +1411,13 @@ async function buildConversationSummary(client, conversationId, currentUserId) {
   if (!row) return null
 
   const participantIds = Array.isArray(row.participant_ids) ? row.participant_ids : []
-  const [participants, lastMessageSender] = await Promise.all([
+  const [participants, lastMessageSender, lastSharedMedia] = await Promise.all([
     Promise.all(participantIds.map((participantId) => getPublicUserViewById(client, participantId, currentUserId))),
     row.last_message_sender_id
       ? getPublicUserViewById(client, row.last_message_sender_id, currentUserId)
+      : Promise.resolve(null),
+    row.last_message_shared_media_id
+      ? buildSharedMediaPreview(client, row.last_message_shared_media_id, currentUserId)
       : Promise.resolve(null),
   ])
 
@@ -1278,10 +1425,24 @@ async function buildConversationSummary(client, conversationId, currentUserId) {
   const otherUser = otherUserId
     ? participants.find((participant) => participant?.id === otherUserId) || null
     : null
+  const visibleParticipants = participants.filter(Boolean)
+  const groupTitle =
+    normalizeString(row.title) ||
+    visibleParticipants
+      .filter((participant) => participant.id !== currentUserId)
+      .map((participant) => participant.displayName)
+      .slice(0, 3)
+      .join(', ') ||
+    'Grupo'
+  const displayName = row.is_group ? groupTitle : otherUser?.displayName || 'Conversa'
 
   return {
     id: row.id,
-    participants: participants.filter(Boolean),
+    isGroup: Boolean(row.is_group),
+    title: groupTitle,
+    avatarUrl: row.avatar_url || '',
+    displayName,
+    participants: visibleParticipants,
     otherUser,
     updatedAt: new Date(row.updated_at).toISOString(),
     lastReadAt: row.viewer_last_read_at ? new Date(row.viewer_last_read_at).toISOString() : null,
@@ -1290,7 +1451,10 @@ async function buildConversationSummary(client, conversationId, currentUserId) {
     lastMessage: row.last_message_id
       ? {
           id: row.last_message_id,
-          text: row.last_message_text,
+          text: row.last_message_text || '',
+          note: row.last_message_preview_text || '',
+          messageType: row.last_message_type || 'text',
+          sharedMedia: lastSharedMedia,
           createdAt: new Date(row.last_message_created_at).toISOString(),
           sender: lastMessageSender,
         }
@@ -1309,6 +1473,9 @@ async function buildConversationDetail(client, conversationId, currentUserId) {
         conversation_id,
         sender_id,
         text_content,
+        message_type,
+        shared_media_id,
+        preview_text,
         created_at
       from direct_message
       where conversation_id = $1
@@ -1328,14 +1495,29 @@ async function buildConversationDetail(client, conversationId, currentUserId) {
 
   return {
     ...summary,
-    messages: rows.map((row) => ({
-      id: row.id,
-      conversationId: row.conversation_id,
-      senderId: row.sender_id,
-      text: row.text_content,
-      createdAt: new Date(row.created_at).toISOString(),
-      sender: senders.get(row.sender_id) || null,
-    })),
+    messages: await Promise.all(
+      rows.map(async (row) => {
+        const [sharedMedia, reactions] = await Promise.all([
+          row.shared_media_id
+            ? buildSharedMediaPreview(client, row.shared_media_id, currentUserId)
+            : Promise.resolve(null),
+          getMessageReactionSummary(client, row.id, currentUserId),
+        ])
+
+        return {
+          id: row.id,
+          conversationId: row.conversation_id,
+          senderId: row.sender_id,
+          text: row.text_content || '',
+          note: row.preview_text || '',
+          messageType: row.message_type || 'text',
+          sharedMedia,
+          reactions,
+          createdAt: new Date(row.created_at).toISOString(),
+          sender: senders.get(row.sender_id) || null,
+        }
+      }),
+    ),
   }
 }
 
@@ -1417,7 +1599,7 @@ export async function createRepository() {
       ).filter(Boolean)
 
       return {
-        appName: process.env.APP_NAME || 'PicoLiga',
+        appName: process.env.APP_NAME || 'PicoMap',
         sports,
         roles: await getRoles(),
         currentUser,
@@ -1581,15 +1763,28 @@ export async function createRepository() {
     async listFeed(filters = {}, currentUserId = null) {
       const params = []
       let whereClause = "where file_url <> '' and media_scope = 'feed'"
-      const limit = Math.min(Math.max(Number(filters.limit) || 10, 1), 20)
-      const offset = Math.max(Number(filters.offset) || 0, 0)
+      const limit = Math.min(Math.max(Number(filters.limit) || 8, 1), 20)
+      const cursor = decodeCursor(filters.cursor)
+      const offset = cursor ? 0 : Math.max(Number(filters.offset) || 0, 0)
 
       if (filters.authorId) {
         params.push(filters.authorId)
         whereClause += ` and user_id = $${params.length}`
       }
 
-      params.push(limit, offset)
+      if (cursor) {
+        params.push(cursor.createdAt, cursor.id)
+        whereClause += ` and (created_at, id) < ($${params.length - 1}::timestamptz, $${params.length}::uuid)`
+      }
+
+      params.push(limit + 1)
+      const limitIndex = params.length
+      let offsetClause = ''
+
+      if (!cursor && offset) {
+        params.push(offset)
+        offsetClause = `offset $${params.length}`
+      }
 
       const { rows } = await query(
         `
@@ -1607,21 +1802,30 @@ export async function createRepository() {
             created_at
           from pico_media
           ${whereClause}
-          order by created_at desc
-          limit $${params.length - 1}
-          offset $${params.length}
+          order by created_at desc, id desc
+          limit $${limitIndex}
+          ${offsetClause}
         `,
         params,
       )
 
+      const selectedRows = rows.slice(0, limit)
       const items = (
-        await Promise.all(rows.map((row) => buildFeedItem({ query }, row, currentUserId)))
+        await Promise.all(selectedRows.map((row) => buildFeedItem({ query }, row, currentUserId)))
       ).filter(Boolean)
+      const lastRow = selectedRows[selectedRows.length - 1]
 
       return {
         items,
-        hasMore: items.length === limit,
-        nextOffset: offset + items.length,
+        hasMore: rows.length > limit,
+        nextCursor:
+          rows.length > limit && lastRow
+            ? encodeCursor({
+                createdAt: new Date(lastRow.created_at).toISOString(),
+                id: lastRow.id,
+              })
+            : null,
+        nextOffset: cursor ? null : offset + items.length,
       }
     },
 
@@ -1642,6 +1846,7 @@ export async function createRepository() {
       ).filter(Boolean)
 
       return people.sort((left, right) => {
+        if (left.isMutual !== right.isMutual) return left.isMutual ? -1 : 1
         if (left.isFollowing !== right.isFollowing) return left.isFollowing ? -1 : 1
         return left.displayName.localeCompare(right.displayName)
       })
@@ -1971,6 +2176,27 @@ export async function createRepository() {
       return people.sort((left, right) => left.displayName.localeCompare(right.displayName))
     },
 
+    async listMutualPeople(currentUserId) {
+      const { rows } = await query(
+        `
+          select uf.following_id as id
+          from user_follow uf
+          join user_follow reverse_follow
+            on reverse_follow.follower_id = uf.following_id
+           and reverse_follow.following_id = uf.follower_id
+          where uf.follower_id = $1
+          order by uf.created_at desc
+        `,
+        [currentUserId],
+      )
+
+      const people = (
+        await Promise.all(rows.map((row) => getPublicUserViewById({ query }, row.id, currentUserId)))
+      ).filter(Boolean)
+
+      return people.sort((left, right) => left.displayName.localeCompare(right.displayName))
+    },
+
     async toggleFollow(currentUserId, targetUserId) {
       if (currentUserId === targetUserId) {
         throw new Error('Voce nao pode seguir o proprio perfil.')
@@ -2046,8 +2272,12 @@ export async function createRepository() {
       })
     },
 
-    async openDirectConversation(userId, recipientUserId) {
-      if (userId === recipientUserId) {
+    async openDirectConversation(userId, payload) {
+      const recipientUserId = typeof payload === 'string' ? payload : payload?.recipientUserId || ''
+      const participantUserIds = Array.isArray(payload?.participantUserIds) ? payload.participantUserIds : []
+      const title = normalizeString(payload?.title)
+
+      if (recipientUserId && userId === recipientUserId) {
         throw new Error('Escolha outra pessoa para iniciar a conversa.')
       }
 
@@ -2057,46 +2287,82 @@ export async function createRepository() {
           throw new Error('Seu perfil nao pode usar mensagens diretas.')
         }
 
-        const { rows: recipientRows } = await client.query('select id from app_user where id = $1', [recipientUserId])
-        if (!recipientRows.length) {
-          throw new Error('Contato nao encontrado.')
+        if (recipientUserId) {
+          const [validRecipientIds] = await Promise.all([
+            ensureMutualRecipients(client, userId, [recipientUserId]),
+          ])
+
+          const normalizedRecipientId = validRecipientIds[0]
+          const { rows: existingRows } = await client.query(
+            `
+              select direct_conversation.id
+              from direct_conversation
+              join direct_conversation_participant
+                on direct_conversation_participant.conversation_id = direct_conversation.id
+              where direct_conversation.is_group = false
+              group by direct_conversation.id
+              having count(*) = 2
+                and bool_or(direct_conversation_participant.user_id = $1)
+                and bool_or(direct_conversation_participant.user_id = $2)
+              limit 1
+            `,
+            [userId, normalizedRecipientId],
+          )
+
+          const existingConversationId = existingRows[0]?.id
+          if (existingConversationId) {
+            await markConversationRead(client, existingConversationId, userId)
+            return buildConversationDetail(client, existingConversationId, userId)
+          }
+
+          const { rows } = await client.query(
+            `
+              insert into direct_conversation (is_group, title, avatar_url, created_by)
+              values (false, '', '', $1)
+              returning id
+            `,
+            [userId],
+          )
+
+          const conversationId = rows[0].id
+          await client.query(
+            `
+              insert into direct_conversation_participant (conversation_id, user_id)
+              values ($1, $2), ($1, $3)
+            `,
+            [conversationId, userId, normalizedRecipientId],
+          )
+
+          await markConversationRead(client, conversationId, userId)
+          return buildConversationDetail(client, conversationId, userId)
         }
 
-        const { rows: existingRows } = await client.query(
-          `
-            select direct_conversation.id
-            from direct_conversation
-            join direct_conversation_participant
-              on direct_conversation_participant.conversation_id = direct_conversation.id
-            group by direct_conversation.id
-            having count(*) = 2
-              and bool_or(direct_conversation_participant.user_id = $1)
-              and bool_or(direct_conversation_participant.user_id = $2)
-            limit 1
-          `,
-          [userId, recipientUserId],
-        )
-
-        const existingConversationId = existingRows[0]?.id
-        if (existingConversationId) {
-          await markConversationRead(client, existingConversationId, userId)
-          return buildConversationDetail(client, existingConversationId, userId)
+        const normalizedParticipantIds = await ensureMutualRecipients(client, userId, participantUserIds)
+        if (normalizedParticipantIds.length < 2) {
+          throw new Error('Escolha pelo menos duas amizades mutuas para criar um grupo.')
         }
 
         const { rows } = await client.query(
           `
-            insert into direct_conversation default values
+            insert into direct_conversation (is_group, title, avatar_url, created_by)
+            values (true, $1, '', $2)
             returning id
           `,
+          [title || 'Novo grupo', userId],
         )
 
         const conversationId = rows[0].id
+        const allParticipants = [userId, ...normalizedParticipantIds]
+        const placeholders = allParticipants
+          .map((participantId, index) => `($1, $${index + 2})`)
+          .join(', ')
+
         await client.query(
           `
             insert into direct_conversation_participant (conversation_id, user_id)
-            values ($1, $2), ($1, $3)
+            values ${placeholders}
           `,
-          [conversationId, userId, recipientUserId],
+          [conversationId, ...allParticipants],
         )
 
         await markConversationRead(client, conversationId, userId)
@@ -2104,9 +2370,12 @@ export async function createRepository() {
       })
     },
 
-    async sendDirectMessage(userId, conversationId, text) {
-      const cleanText = normalizeString(text)
-      if (!cleanText) {
+    async sendDirectMessage(userId, conversationId, payload) {
+      const type = payload?.type === 'shared_media' ? 'shared_media' : 'text'
+      const cleanText = normalizeString(payload?.text)
+      const note = normalizeString(payload?.note)
+
+      if (type === 'text' && !cleanText) {
         throw new Error('Escreva uma mensagem antes de enviar.')
       }
 
@@ -2121,13 +2390,37 @@ export async function createRepository() {
           throw new Error('Conversa nao encontrada.')
         }
 
+        let mediaId = null
+        let notificationPreview = cleanText
+
+        if (type === 'shared_media') {
+          mediaId = payload?.mediaId || null
+          if (!mediaId) {
+            throw new Error('Escolha a publicacao que voce quer compartilhar.')
+          }
+
+          const mediaRow = await getMediaRowById(client, mediaId)
+          if (!mediaRow) {
+            throw new Error('A publicacao compartilhada nao foi encontrada.')
+          }
+
+          notificationPreview = note || mediaRow.title || 'Compartilhou um post'
+        }
+
         const { rows } = await client.query(
           `
-            insert into direct_message (conversation_id, sender_id, text_content)
-            values ($1, $2, $3)
+            insert into direct_message (
+              conversation_id,
+              sender_id,
+              text_content,
+              message_type,
+              shared_media_id,
+              preview_text
+            )
+            values ($1, $2, $3, $4, $5, $6)
             returning created_at
           `,
-          [conversationId, userId, cleanText],
+          [conversationId, userId, type === 'text' ? cleanText : '', type, mediaId, type === 'shared_media' ? note : ''],
         )
 
         await client.query(
@@ -2156,12 +2449,58 @@ export async function createRepository() {
               actorUserId: userId,
               kind: 'dm_message',
               entityId: conversationId,
-              textPreview: cleanText,
+              textPreview: notificationPreview || 'Nova mensagem',
             }),
           ),
         )
 
         await markConversationRead(client, conversationId, userId)
+        return buildConversationDetail(client, conversationId, userId)
+      })
+    },
+
+    async toggleDirectMessageReaction(userId, conversationId, messageId) {
+      return withTransaction(async (client) => {
+        const isMember = await ensureConversationMembership(client, conversationId, userId)
+        if (!isMember) {
+          throw new Error('Conversa nao encontrada.')
+        }
+
+        const { rows: messageRows } = await client.query(
+          `
+            select id
+            from direct_message
+            where id = $1
+              and conversation_id = $2
+          `,
+          [messageId, conversationId],
+        )
+
+        if (!messageRows.length) {
+          throw new Error('Mensagem nao encontrada.')
+        }
+
+        const deleted = await client.query(
+          `
+            delete from direct_message_reaction
+            where message_id = $1
+              and user_id = $2
+              and reaction = 'heart'
+            returning message_id
+          `,
+          [messageId, userId],
+        )
+
+        if (!deleted.rows.length) {
+          await client.query(
+            `
+              insert into direct_message_reaction (message_id, user_id, reaction)
+              values ($1, $2, 'heart')
+            `,
+            [messageId, userId],
+          )
+        }
+
         return buildConversationDetail(client, conversationId, userId)
       })
     },

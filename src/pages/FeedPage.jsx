@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiRequest } from '../api'
 import { useAuth } from '../auth'
-import SocialPostCard from '../components/SocialPostCard'
+import ReelPost from '../components/ReelPost'
 import { uploadSelectedFile } from '../utils/files'
 
-const pageSize = 6
+const pageSize = 5
 
 export default function FeedPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -15,67 +15,42 @@ export default function FeedPage() {
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
-  const [nextOffset, setNextOffset] = useState(0)
+  const [nextCursor, setNextCursor] = useState('')
   const [saving, setSaving] = useState(false)
   const [uploadingFile, setUploadingFile] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [showComposer, setShowComposer] = useState(searchParams.get('compose') === '1')
   const [form, setForm] = useState({
     picoSlug: '',
     mediaType: 'video',
     title: '',
     fileUrl: '',
   })
-  const [showComposer, setShowComposer] = useState(searchParams.get('compose') === '1')
   const sentinelRef = useRef(null)
 
   useEffect(() => {
     setShowComposer(searchParams.get('compose') === '1')
   }, [searchParams])
 
-  async function loadFeed({ reset = false } = {}) {
-    const targetOffset = reset ? 0 : nextOffset
-
-    if (reset) {
-      setLoading(true)
-      setError('')
-    } else {
-      if (loadingMore || !hasMore) return
-      setLoadingMore(true)
-    }
-
-    try {
-      const payload = await apiRequest(`/api/feed?limit=${pageSize}&offset=${targetOffset}`, {
-        token,
-      })
-
-      setItems((current) => (reset ? payload.items : [...current, ...payload.items]))
-      setHasMore(payload.hasMore)
-      setNextOffset(payload.nextOffset)
-    } catch (nextError) {
-      setError(nextError.message)
-    } finally {
-      setLoading(false)
-      setLoadingMore(false)
-    }
-  }
-
-  async function loadPage() {
+  async function loadInitial() {
     setLoading(true)
+    setError('')
 
     try {
       const [feedPayload, picosPayload] = await Promise.all([
-        apiRequest(`/api/feed?limit=${pageSize}&offset=0`, { token }),
+        apiRequest(`/api/feed?limit=${pageSize}`, { token }),
         apiRequest('/api/picos', { token }),
       ])
 
-      setItems(feedPayload.items)
-      setHasMore(feedPayload.hasMore)
-      setNextOffset(feedPayload.nextOffset)
-      setPicos(picosPayload.items)
+      const visiblePicos = (picosPayload.items || []).filter((item) => item.approvalStatus === 'approved')
+      setItems(feedPayload.items || [])
+      setHasMore(Boolean(feedPayload.hasMore))
+      setNextCursor(feedPayload.nextCursor || '')
+      setPicos(visiblePicos)
       setForm((current) => ({
         ...current,
-        picoSlug: current.picoSlug || picosPayload.items[0]?.slug || '',
+        picoSlug: current.picoSlug || visiblePicos[0]?.slug || '',
       }))
     } catch (nextError) {
       setError(nextError.message)
@@ -84,27 +59,45 @@ export default function FeedPage() {
     }
   }
 
+  async function loadMore() {
+    if (loadingMore || !hasMore || !nextCursor) return
+
+    setLoadingMore(true)
+
+    try {
+      const payload = await apiRequest(
+        `/api/feed?limit=${pageSize}&cursor=${encodeURIComponent(nextCursor)}`,
+        { token },
+      )
+      setItems((current) => [...current, ...(payload.items || [])])
+      setHasMore(Boolean(payload.hasMore))
+      setNextCursor(payload.nextCursor || '')
+    } catch (nextError) {
+      setError(nextError.message)
+    } finally {
+      setLoadingMore(false)
+    }
+  }
+
   useEffect(() => {
-    loadPage()
+    loadInitial()
   }, [token])
 
   useEffect(() => {
-    if (!sentinelRef.current || !hasMore) return undefined
+    if (!sentinelRef.current || !hasMore || !nextCursor) return undefined
 
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          loadFeed()
+          loadMore()
         }
       },
-      {
-        rootMargin: '160px 0px',
-      },
+      { rootMargin: '400px 0px' },
     )
 
     observer.observe(sentinelRef.current)
     return () => observer.disconnect()
-  }, [hasMore, nextOffset, loadingMore, token])
+  }, [hasMore, nextCursor, loadingMore, token])
 
   async function handleFileChange(event) {
     const file = event.target.files?.[0]
@@ -148,19 +141,20 @@ export default function FeedPage() {
           fileUrl: form.fileUrl,
         },
       })
-      setMessage('Post publicado no feed.')
+
+      setMessage('Publicado no feed.')
       setForm((current) => ({
         ...current,
         title: '',
         fileUrl: '',
       }))
+      setShowComposer(false)
       setSearchParams((current) => {
         const next = new URLSearchParams(current)
         next.delete('compose')
         return next
       })
-      setShowComposer(false)
-      await loadPage()
+      await loadInitial()
     } catch (nextError) {
       setError(nextError.message)
     } finally {
@@ -179,43 +173,43 @@ export default function FeedPage() {
   }
 
   return (
-    <section className="page-grid social-page">
-      <div className="page-column page-column-main feed-column">
-        <div className="toolbar-card compact-page-header">
-          <div className="section-title compact-section-title">
-            <div>
-              <p className="eyebrow">Comunidade</p>
-              <h1>Feed</h1>
-            </div>
-            <button
-              className="primary-button small-link-button"
-              onClick={() => {
-                const nextVisible = !showComposer
-                setShowComposer(nextVisible)
-                setSearchParams((current) => {
-                  const next = new URLSearchParams(current)
-                  if (!nextVisible) next.delete('compose')
-                  else next.set('compose', '1')
-                  return next
-                })
-              }}
-            >
-              {showComposer ? 'Fechar criacao' : 'Nova publicacao'}
-            </button>
-          </div>
-          <div className="chip-row compact-chip-row">
-            <span className="status-pill">{items.length} posts</span>
-          </div>
+    <section className="reels-page">
+      <div className="reels-page-header">
+        <div>
+          <p className="eyebrow">PicoMap</p>
+          <h1>Feed</h1>
         </div>
+        <button
+          className="primary-button small-link-button"
+          type="button"
+          onClick={() => {
+            const nextVisible = !showComposer
+            setShowComposer(nextVisible)
+            setSearchParams((current) => {
+              const next = new URLSearchParams(current)
+              if (nextVisible) next.set('compose', '1')
+              else next.delete('compose')
+              return next
+            })
+          }}
+        >
+          {showComposer ? 'Fechar' : 'Postar'}
+        </button>
+      </div>
 
-        {showComposer ? (
-          <div className="side-card compose-card">
-            <div className="section-title compact-section-title">
-              <h2>Novo post</h2>
+      {showComposer ? (
+        <div className="sheet-backdrop" onClick={() => setShowComposer(false)}>
+          <div className="composer-sheet" onClick={(event) => event.stopPropagation()}>
+            <div className="sheet-handle" />
+            <div className="sheet-header">
+              <strong>Nova publicacao</strong>
+              <button className="icon-button" type="button" onClick={() => setShowComposer(false)}>
+                x
+              </button>
             </div>
 
             {user ? (
-              <form className="form-card compact-form" onSubmit={handlePublish}>
+              <form className="compose-form-sheet" onSubmit={handlePublish}>
                 <label>
                   Pico
                   <select
@@ -233,28 +227,31 @@ export default function FeedPage() {
                   </select>
                 </label>
 
-                <label>
-                  Tipo
-                  <select
-                    value={form.mediaType}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        mediaType: event.target.value,
-                        fileUrl: '',
-                      }))
-                    }
+                <div className="compose-type-row">
+                  <button
+                    className={form.mediaType === 'video' ? 'chip active' : 'chip'}
+                    type="button"
+                    onClick={() => setForm((current) => ({ ...current, mediaType: 'video', fileUrl: '' }))}
                   >
-                    <option value="video">Video</option>
-                    <option value="photo">Foto</option>
-                  </select>
-                </label>
+                    Video
+                  </button>
+                  <button
+                    className={form.mediaType === 'photo' ? 'chip active' : 'chip'}
+                    type="button"
+                    onClick={() => setForm((current) => ({ ...current, mediaType: 'photo', fileUrl: '' }))}
+                  >
+                    Foto
+                  </button>
+                </div>
 
                 <label>
-                  Titulo
+                  Legenda
                   <input
                     value={form.title}
-                    onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, title: event.target.value }))
+                    }
+                    placeholder="Fale do role, da sessao ou da manobra"
                   />
                 </label>
 
@@ -268,51 +265,51 @@ export default function FeedPage() {
                 </label>
 
                 {message ? <p className="success-text">{message}</p> : null}
+                {error ? <p className="error-text">{error}</p> : null}
 
                 <button
                   className="primary-button full-width"
+                  type="submit"
                   disabled={saving || uploadingFile || !form.picoSlug || !form.fileUrl}
                 >
-                  {saving ? 'Publicando...' : 'Publicar no feed'}
+                  {saving ? 'Publicando...' : uploadingFile ? 'Enviando arquivo...' : 'Publicar'}
                 </button>
               </form>
             ) : (
               <div className="empty-state">
-                <p className="muted-text">Entre para publicar fotos e videos no feed dos picos.</p>
+                <p className="muted-text">Entre para publicar no feed do PicoMap.</p>
                 <Link className="primary-button small-link-button full-width" to="/entrar">
                   Entrar agora
                 </Link>
               </div>
             )}
           </div>
-        ) : null}
+        </div>
+      ) : null}
 
-        {loading ? <div className="side-card">Carregando feed...</div> : null}
-        {error ? <p className="error-text">{error}</p> : null}
+      {loading ? <div className="dark-empty-state">Carregando feed...</div> : null}
+      {error ? <p className="error-text">{error}</p> : null}
 
-        <div className="list-stack">
-          {items.length ? (
-            items.map((item) => (
-              <SocialPostCard
-                key={item.id}
+      <div className="reels-feed">
+        {items.length ? (
+          items.map((item) => (
+            <div key={item.id} className="reel-slot">
+              <ReelPost
                 item={item}
                 token={token}
                 currentUser={user}
                 onUpdated={handlePostUpdated}
                 onDeleted={handlePostDeleted}
               />
-            ))
-          ) : (
-            <div className="side-card empty-state">
-              <p className="muted-text">Ainda nao existem posts publicados nos picos.</p>
             </div>
-          )}
-        </div>
+          ))
+        ) : !loading ? (
+          <div className="dark-empty-state">Ainda nao existem publicacoes no feed.</div>
+        ) : null}
+      </div>
 
-        <div ref={sentinelRef} className="feed-sentinel">
-          {loadingMore ? <span className="status-pill">Carregando mais posts...</span> : null}
-          {!hasMore && items.length ? <span className="status-pill">Voce chegou no fim do feed.</span> : null}
-        </div>
+      <div ref={sentinelRef} className="feed-sentinel">
+        {loadingMore ? <span className="status-pill">Carregando mais...</span> : null}
       </div>
     </section>
   )

@@ -3,50 +3,72 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { apiRequest } from '../api'
 import { useAuth } from '../auth'
 import MediaAsset from '../components/MediaAsset'
+import { HeartIcon, PlusIcon, SendIcon } from '../components/AppIcons'
 
 function formatTime(value) {
   return new Intl.DateTimeFormat('pt-BR', {
-    dateStyle: 'short',
-    timeStyle: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
   }).format(new Date(value))
+}
+
+function getConversationPreview(conversation) {
+  if (!conversation?.lastMessage) return 'Comece a conversa'
+
+  if (conversation.lastMessage.messageType === 'shared_media') {
+    return conversation.lastMessage.note || 'Compartilhou um post'
+  }
+
+  return conversation.lastMessage.text || 'Nova mensagem'
+}
+
+function getConversationName(conversation) {
+  return conversation?.displayName || conversation?.otherUser?.displayName || 'Conversa'
 }
 
 export default function ChatsPage() {
   const [searchParams] = useSearchParams()
   const preferredConversationId = searchParams.get('conversation') || ''
   const { user, token } = useAuth()
-  const [following, setFollowing] = useState([])
+  const [mutuals, setMutuals] = useState([])
+  const [groups, setGroups] = useState([])
   const [conversations, setConversations] = useState([])
-  const [searchText, setSearchText] = useState('')
   const [selectedConversationId, setSelectedConversationId] = useState('')
   const [selectedConversation, setSelectedConversation] = useState(null)
+  const [searchText, setSearchText] = useState('')
   const [messageText, setMessageText] = useState('')
-  const [error, setError] = useState('')
+  const [showGroupComposer, setShowGroupComposer] = useState(false)
+  const [groupTitle, setGroupTitle] = useState('')
+  const [groupParticipants, setGroupParticipants] = useState([])
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [creatingGroup, setCreatingGroup] = useState(false)
+  const [error, setError] = useState('')
 
-  async function loadInbox(preferredConversationId = '', refreshThread = true) {
-    if (!user) return
+  async function loadInbox(nextConversationId = '', refreshThread = true) {
+    if (!token) return
 
     setLoading(true)
 
     try {
       const payload = await apiRequest('/api/dms', { token })
-      setFollowing(payload.following)
-      setConversations(payload.conversations)
+      setMutuals(payload.mutuals || [])
+      setGroups(payload.groups || [])
+      setConversations(payload.conversations || [])
 
-      const nextConversationId =
-        preferredConversationId ||
+      const fallbackConversationId =
+        nextConversationId ||
         selectedConversationId ||
-        payload.conversations[0]?.id ||
+        preferredConversationId ||
+        payload.conversations?.[0]?.id ||
         ''
 
-      setSelectedConversationId(nextConversationId)
+      setSelectedConversationId(fallbackConversationId)
 
-      if (nextConversationId && refreshThread) {
-        const detailPayload = await apiRequest(`/api/dms/${nextConversationId}`, { token })
+      if (fallbackConversationId && refreshThread) {
+        const detailPayload = await apiRequest(`/api/dms/${fallbackConversationId}`, { token })
         setSelectedConversation(detailPayload.conversation)
-      } else if (!nextConversationId) {
+      } else if (!fallbackConversationId) {
         setSelectedConversation(null)
       }
     } catch (nextError) {
@@ -57,12 +79,12 @@ export default function ChatsPage() {
   }
 
   useEffect(() => {
-    if (!user) return
+    if (!token) return
     loadInbox(preferredConversationId)
-  }, [token, user, preferredConversationId])
+  }, [token, preferredConversationId])
 
   useEffect(() => {
-    if (!user || !selectedConversationId) return undefined
+    if (!token || !selectedConversationId) return undefined
 
     const interval = window.setInterval(async () => {
       try {
@@ -71,17 +93,18 @@ export default function ChatsPage() {
           apiRequest(`/api/dms/${selectedConversationId}`, { token }),
         ])
 
-        setFollowing(inboxPayload.following)
-        setConversations(inboxPayload.conversations)
+        setMutuals(inboxPayload.mutuals || [])
+        setGroups(inboxPayload.groups || [])
+        setConversations(inboxPayload.conversations || [])
         setSelectedConversation(detailPayload.conversation)
       } catch {}
-    }, 4000)
+    }, 3500)
 
     return () => window.clearInterval(interval)
-  }, [selectedConversationId, token, user])
+  }, [selectedConversationId, token])
 
   const unreadTotal = useMemo(
-    () => conversations.reduce((total, conversation) => total + Number(conversation.unreadCount || 0), 0),
+    () => conversations.reduce((total, item) => total + Number(item.unreadCount || 0), 0),
     [conversations],
   )
 
@@ -89,24 +112,29 @@ export default function ChatsPage() {
     const normalized = searchText.trim().toLowerCase()
     if (!normalized) return conversations
 
-    return conversations.filter((conversation) => {
-      const name = conversation.otherUser?.displayName?.toLowerCase() || ''
-      const username = conversation.otherUser?.username?.toLowerCase() || ''
-      const text = conversation.lastMessage?.text?.toLowerCase() || ''
-      return name.includes(normalized) || username.includes(normalized) || text.includes(normalized)
+    return conversations.filter((item) => {
+      const name = getConversationName(item).toLowerCase()
+      const preview = getConversationPreview(item).toLowerCase()
+      return name.includes(normalized) || preview.includes(normalized)
     })
   }, [conversations, searchText])
 
-  const filteredFollowing = useMemo(() => {
+  const filteredMutuals = useMemo(() => {
     const normalized = searchText.trim().toLowerCase()
-    if (!normalized) return following
+    if (!normalized) return mutuals
 
-    return following.filter((person) => {
-      const name = person.displayName?.toLowerCase() || ''
+    return mutuals.filter((person) => {
+      const displayName = person.displayName?.toLowerCase() || ''
       const username = person.username?.toLowerCase() || ''
-      return name.includes(normalized) || username.includes(normalized)
+      return displayName.includes(normalized) || username.includes(normalized)
     })
-  }, [following, searchText])
+  }, [mutuals, searchText])
+
+  function toggleGroupParticipant(userId) {
+    setGroupParticipants((current) =>
+      current.includes(userId) ? current.filter((item) => item !== userId) : [...current, userId],
+    )
+  }
 
   async function handleSelectConversation(conversationId) {
     setSelectedConversationId(conversationId)
@@ -115,11 +143,6 @@ export default function ChatsPage() {
     try {
       const payload = await apiRequest(`/api/dms/${conversationId}`, { token })
       setSelectedConversation(payload.conversation)
-      await apiRequest(`/api/dms/${conversationId}/read`, {
-        method: 'POST',
-        token,
-      })
-      await loadInbox(conversationId, false)
     } catch (nextError) {
       setError(nextError.message)
     }
@@ -132,11 +155,8 @@ export default function ChatsPage() {
       const payload = await apiRequest('/api/dms', {
         method: 'POST',
         token,
-        body: {
-          recipientUserId,
-        },
+        body: { recipientUserId },
       })
-
       setSelectedConversationId(payload.conversation.id)
       setSelectedConversation(payload.conversation)
       await loadInbox(payload.conversation.id, false)
@@ -145,8 +165,38 @@ export default function ChatsPage() {
     }
   }
 
+  async function handleCreateGroup() {
+    if (!groupParticipants.length || creatingGroup) return
+
+    setCreatingGroup(true)
+    setError('')
+
+    try {
+      const payload = await apiRequest('/api/dms', {
+        method: 'POST',
+        token,
+        body: {
+          title: groupTitle,
+          participantUserIds: groupParticipants,
+        },
+      })
+      setShowGroupComposer(false)
+      setGroupParticipants([])
+      setGroupTitle('')
+      setSelectedConversationId(payload.conversation.id)
+      setSelectedConversation(payload.conversation)
+      await loadInbox(payload.conversation.id, false)
+    } catch (nextError) {
+      setError(nextError.message)
+    } finally {
+      setCreatingGroup(false)
+    }
+  }
+
   async function handleSendMessage(event) {
     event.preventDefault()
+    if (!messageText.trim() || !selectedConversationId) return
+
     setSending(true)
     setError('')
 
@@ -155,6 +205,7 @@ export default function ChatsPage() {
         method: 'POST',
         token,
         body: {
+          type: 'text',
           text: messageText,
         },
       })
@@ -165,6 +216,24 @@ export default function ChatsPage() {
       setError(nextError.message)
     } finally {
       setSending(false)
+    }
+  }
+
+  async function handleToggleReaction(messageId) {
+    if (!selectedConversationId) return
+
+    try {
+      const payload = await apiRequest(
+        `/api/dms/${selectedConversationId}/messages/${messageId}/reactions`,
+        {
+          method: 'POST',
+          token,
+        },
+      )
+      setSelectedConversation(payload.conversation)
+      await loadInbox(selectedConversationId, false)
+    } catch (nextError) {
+      setError(nextError.message)
     }
   }
 
@@ -182,183 +251,248 @@ export default function ChatsPage() {
   }
 
   return (
-    <section className="page-grid social-page">
-      <div className="page-column page-column-main">
-        <div className="dm-layout">
-          <aside className="side-card dm-sidebar">
-            <div className="section-title compact-section-title">
-              <div>
-                <p className="eyebrow">Inbox</p>
-                <h1>Mensagens</h1>
+    <section className="chat-page">
+      <aside className="chat-sidebar">
+        <div className="chat-sidebar-header">
+          <div>
+            <h1>Mensagens</h1>
+            <p>{unreadTotal} novas</p>
+          </div>
+          <button className="topbar-icon-button" type="button" onClick={() => setShowGroupComposer(true)}>
+            <PlusIcon size={20} />
+          </button>
+        </div>
+
+        <input
+          className="chat-search-input"
+          value={searchText}
+          onChange={(event) => setSearchText(event.target.value)}
+          placeholder="Buscar"
+        />
+
+        <div className="chat-mutual-strip">
+          {filteredMutuals.map((person) => (
+            <button
+              key={person.id}
+              className="chat-mutual-card"
+              type="button"
+              onClick={() => handleStartConversation(person.id)}
+            >
+              {person.avatarUrl ? (
+                <MediaAsset className="chat-mutual-avatar" src={person.avatarUrl} alt={person.displayName} />
+              ) : (
+                <div className="avatar-circle chat-mutual-avatar">
+                  {person.displayName.slice(0, 1).toUpperCase()}
+                </div>
+              )}
+              <span>{person.displayName}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="chat-inbox-list">
+          {loading ? <p className="muted-text">Carregando conversas...</p> : null}
+          {filteredConversations.map((conversation) => (
+            <button
+              key={conversation.id}
+              className={
+                conversation.id === selectedConversationId
+                  ? 'chat-inbox-row active'
+                  : 'chat-inbox-row'
+              }
+              type="button"
+              onClick={() => handleSelectConversation(conversation.id)}
+            >
+              {conversation.avatarUrl ? (
+                <MediaAsset className="chat-row-avatar" src={conversation.avatarUrl} alt={conversation.displayName} />
+              ) : conversation.otherUser?.avatarUrl ? (
+                <MediaAsset className="chat-row-avatar" src={conversation.otherUser.avatarUrl} alt={conversation.displayName} />
+              ) : (
+                <div className="avatar-circle chat-row-avatar">
+                  {getConversationName(conversation).slice(0, 1).toUpperCase()}
+                </div>
+              )}
+
+              <div className="chat-row-copy">
+                <strong>{getConversationName(conversation)}</strong>
+                <p>{getConversationPreview(conversation)}</p>
               </div>
-              <div className="inline-actions">
-                <span className="status-pill">{unreadTotal} novas</span>
-                <Link className="secondary-button small-link-button" to="/pesquisa">
-                  Nova
-                </Link>
+
+              <div className="chat-row-meta">
+                {conversation.lastMessage?.createdAt ? (
+                  <span>{formatTime(conversation.lastMessage.createdAt)}</span>
+                ) : null}
+                {conversation.unreadCount ? <span className="chat-unread-dot" /> : null}
+              </div>
+            </button>
+          ))}
+        </div>
+      </aside>
+
+      <div className="chat-thread-shell">
+        {selectedConversation ? (
+          <>
+            <div className="chat-thread-header">
+              <div className="chat-thread-user">
+                {selectedConversation.avatarUrl ? (
+                  <MediaAsset className="chat-row-avatar" src={selectedConversation.avatarUrl} alt={selectedConversation.displayName} />
+                ) : selectedConversation.otherUser?.avatarUrl ? (
+                  <MediaAsset className="chat-row-avatar" src={selectedConversation.otherUser.avatarUrl} alt={selectedConversation.displayName} />
+                ) : (
+                  <div className="avatar-circle chat-row-avatar">
+                    {getConversationName(selectedConversation).slice(0, 1).toUpperCase()}
+                  </div>
+                )}
+                <div>
+                  <strong>{getConversationName(selectedConversation)}</strong>
+                  <p>
+                    {selectedConversation.isGroup
+                      ? `${selectedConversation.participants.length} pessoas`
+                      : selectedConversation.otherUser?.username
+                        ? `@${selectedConversation.otherUser.username}`
+                        : 'DM'}
+                  </p>
+                </div>
               </div>
             </div>
 
-            <input
-              value={searchText}
-              onChange={(event) => setSearchText(event.target.value)}
-              placeholder="Pesquisar conversas ou pessoas"
-            />
+            <div className="chat-messages-list">
+              {selectedConversation.messages.map((item) => {
+                const isOwn = item.senderId === user.id
 
-            <div className="story-row">
-              {following.slice(0, 8).map((person) => (
-                <button key={person.id} className="story-card" onClick={() => handleStartConversation(person.id)}>
-                  {person.avatarUrl ? (
-                    <MediaAsset className="avatar-circle avatar-mini" src={person.avatarUrl} alt={person.displayName} />
-                  ) : (
-                    <div className="avatar-circle avatar-mini">{person.displayName.slice(0, 1).toUpperCase()}</div>
-                  )}
-                  <span>{person.displayName}</span>
+                return (
+                  <article
+                    key={item.id}
+                    className={isOwn ? 'chat-message-row own' : 'chat-message-row'}
+                  >
+                    {!isOwn ? (
+                      item.sender?.avatarUrl ? (
+                        <MediaAsset className="chat-message-avatar" src={item.sender.avatarUrl} alt={item.sender.displayName} />
+                      ) : (
+                        <div className="avatar-circle chat-message-avatar">
+                          {(item.sender?.displayName || 'P').slice(0, 1).toUpperCase()}
+                        </div>
+                      )
+                    ) : null}
+
+                    <div className={isOwn ? 'chat-message-bubble own' : 'chat-message-bubble'}>
+                      {item.messageType === 'shared_media' && item.sharedMedia ? (
+                        <Link className="shared-message-card" to={`/picos/${item.sharedMedia.pico.slug}`}>
+                          {item.sharedMedia.mediaType === 'video' ? (
+                            <video
+                              className="shared-message-thumb"
+                              src={item.sharedMedia.fileUrl}
+                              muted
+                              playsInline
+                            />
+                          ) : (
+                            <img className="shared-message-thumb" src={item.sharedMedia.fileUrl} alt={item.sharedMedia.title} />
+                          )}
+                          <div className="shared-message-copy">
+                            <strong>{item.sharedMedia.author?.username || item.sharedMedia.author?.displayName}</strong>
+                            <span>{item.sharedMedia.title}</span>
+                            <small>{item.sharedMedia.pico.name}</small>
+                          </div>
+                        </Link>
+                      ) : null}
+
+                      {item.note ? <p className="chat-message-note">{item.note}</p> : null}
+                      {item.messageType === 'text' && item.text ? <p>{item.text}</p> : null}
+
+                      <div className="chat-message-meta">
+                        <span>{formatTime(item.createdAt)}</span>
+                        <button
+                          className={item.reactions?.hasHeart ? 'chat-reaction-button active' : 'chat-reaction-button'}
+                          type="button"
+                          onClick={() => handleToggleReaction(item.id)}
+                        >
+                          <HeartIcon size={16} filled={item.reactions?.hasHeart} />
+                          {item.reactions?.heartCount ? <small>{item.reactions.heartCount}</small> : null}
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+
+            <form className="chat-composer" onSubmit={handleSendMessage}>
+              <input
+                value={messageText}
+                onChange={(event) => setMessageText(event.target.value)}
+                placeholder="Mensagem..."
+              />
+              <button className="chat-send-button" type="submit" disabled={sending || !messageText.trim()}>
+                <SendIcon size={20} />
+              </button>
+            </form>
+          </>
+        ) : (
+          <div className="dark-empty-state">Escolha uma conversa ou crie um grupo.</div>
+        )}
+
+        {error ? <p className="error-text">{error}</p> : null}
+      </div>
+
+      {showGroupComposer ? (
+        <div className="sheet-backdrop" onClick={() => setShowGroupComposer(false)}>
+          <div className="group-sheet" onClick={(event) => event.stopPropagation()}>
+            <div className="sheet-handle" />
+            <div className="sheet-header">
+              <strong>Novo grupo</strong>
+              <button className="icon-button" type="button" onClick={() => setShowGroupComposer(false)}>
+                x
+              </button>
+            </div>
+
+            <label>
+              Nome do grupo
+              <input
+                value={groupTitle}
+                onChange={(event) => setGroupTitle(event.target.value)}
+                placeholder="Role da noite"
+              />
+            </label>
+
+            <div className="group-sheet-list">
+              {mutuals.map((person) => (
+                <button
+                  key={person.id}
+                  className={groupParticipants.includes(person.id) ? 'group-person-row active' : 'group-person-row'}
+                  type="button"
+                  onClick={() => toggleGroupParticipant(person.id)}
+                >
+                  <div className="chat-thread-user">
+                    {person.avatarUrl ? (
+                      <MediaAsset className="chat-row-avatar" src={person.avatarUrl} alt={person.displayName} />
+                    ) : (
+                      <div className="avatar-circle chat-row-avatar">
+                        {person.displayName.slice(0, 1).toUpperCase()}
+                      </div>
+                    )}
+                    <div>
+                      <strong>{person.displayName}</strong>
+                      <p>@{person.username}</p>
+                    </div>
+                  </div>
+                  <span className={groupParticipants.includes(person.id) ? 'status-pill active-share-pill' : 'status-pill'}>
+                    {groupParticipants.includes(person.id) ? 'Ok' : 'Selecionar'}
+                  </span>
                 </button>
               ))}
             </div>
 
-            {loading ? <p className="muted-text">Carregando conversas...</p> : null}
-
-            <div className="list-stack compact-list">
-              {filteredConversations.length ? (
-                filteredConversations.map((conversation) => (
-                  <button
-                    key={conversation.id}
-                    className={
-                      conversation.id === selectedConversationId ? 'list-item active dm-list-item' : 'list-item dm-list-item'
-                    }
-                    onClick={() => handleSelectConversation(conversation.id)}
-                  >
-                    <div className="user-chip">
-                      {conversation.otherUser?.avatarUrl ? (
-                        <MediaAsset className="avatar-circle avatar-mini" src={conversation.otherUser.avatarUrl} alt={conversation.otherUser.displayName} />
-                      ) : (
-                        <div className="avatar-circle avatar-mini">
-                          {conversation.otherUser?.displayName.slice(0, 1).toUpperCase()}
-                        </div>
-                      )}
-                      <div>
-                        <strong>{conversation.otherUser?.displayName || 'Conversa'}</strong>
-                        <p>{conversation.lastMessage?.text || 'Sem mensagens ainda.'}</p>
-                      </div>
-                    </div>
-
-                    <div className="dm-list-meta">
-                      <span>{conversation.lastMessage ? formatTime(conversation.lastMessage.createdAt) : ''}</span>
-                      {conversation.unreadCount ? <span className="pill">{conversation.unreadCount}</span> : null}
-                    </div>
-                  </button>
-                ))
-              ) : (
-                <p className="muted-text">Nenhuma conversa.</p>
-              )}
-            </div>
-
-            <div className="section-divider" />
-
-            <div className="section-title compact-section-title">
-              <h2>Seguindo</h2>
-              <span>{filteredFollowing.length}</span>
-            </div>
-
-            <div className="list-stack compact-list">
-              {filteredFollowing.length ? (
-                filteredFollowing.map((person) => (
-                  <button
-                    key={person.id}
-                    className="list-item"
-                    onClick={() => handleStartConversation(person.id)}
-                  >
-                    <div className="user-chip">
-                      {person.avatarUrl ? (
-                        <MediaAsset className="avatar-circle avatar-mini" src={person.avatarUrl} alt={person.displayName} />
-                      ) : (
-                        <div className="avatar-circle avatar-mini">{person.displayName.slice(0, 1).toUpperCase()}</div>
-                      )}
-                      <div>
-                        <strong>{person.displayName}</strong>
-                        <p>@{person.username}</p>
-                      </div>
-                    </div>
-                    <span>Mensagem</span>
-                  </button>
-                ))
-              ) : (
-                <div className="empty-state">
-                  <p className="muted-text">Siga alguem para abrir conversa.</p>
-                  <Link className="secondary-button small-link-button full-width" to="/pesquisa">
-                    Buscar pessoas
-                  </Link>
-                </div>
-              )}
-            </div>
-          </aside>
-
-          <div className="side-card dm-thread">
-            {selectedConversation ? (
-              <>
-                <div className="post-card-header">
-                  <div className="user-chip">
-                    {selectedConversation.otherUser?.avatarUrl ? (
-                      <MediaAsset className="avatar-circle avatar-mini" src={selectedConversation.otherUser.avatarUrl} alt={selectedConversation.otherUser.displayName} />
-                    ) : (
-                      <div className="avatar-circle avatar-mini">
-                        {selectedConversation.otherUser?.displayName.slice(0, 1).toUpperCase()}
-                      </div>
-                    )}
-                    <div>
-                      <strong>{selectedConversation.otherUser?.displayName}</strong>
-                      <p>@{selectedConversation.otherUser?.username}</p>
-                    </div>
-                  </div>
-                  <span className="status-pill">{selectedConversation.messagesCount} mensagens</span>
-                </div>
-
-                <div className="dm-messages">
-                  {selectedConversation.messages.map((item) => {
-                    const isOwn = item.sender?.id === user.id
-
-                    return (
-                      <article
-                        key={item.id}
-                        className={isOwn ? 'message-bubble own-message' : 'message-bubble'}
-                      >
-                        <strong>{isOwn ? 'Voce' : item.sender?.displayName}</strong>
-                        <p>{item.text}</p>
-                        <span>{formatTime(item.createdAt)}</span>
-                      </article>
-                    )
-                  })}
-                </div>
-
-                <form className="dm-composer" onSubmit={handleSendMessage}>
-                  <textarea
-                    rows="2"
-                    placeholder="Escreva uma mensagem..."
-                    value={messageText}
-                    onChange={(event) => setMessageText(event.target.value)}
-                  />
-                  <button
-                    className="primary-button"
-                    disabled={sending || !selectedConversationId || !messageText.trim()}
-                  >
-                    {sending ? 'Enviando...' : 'Enviar'}
-                  </button>
-                </form>
-              </>
-            ) : (
-              <div className="empty-state">
-                <p className="muted-text">
-                  Escolha uma conversa ou toque em um perfil que voce segue para abrir a DM.
-                </p>
-              </div>
-            )}
-
-            {error ? <p className="error-text">{error}</p> : null}
+            <button
+              className="primary-button full-width"
+              type="button"
+              disabled={creatingGroup || groupParticipants.length < 2}
+              onClick={handleCreateGroup}
+            >
+              {creatingGroup ? 'Criando...' : 'Criar grupo'}
+            </button>
           </div>
         </div>
-      </div>
+      ) : null}
     </section>
   )
 }

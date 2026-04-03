@@ -139,7 +139,7 @@ export default function EventsPage() {
         <div className="toolbar-card compact-page-header">
           <div className="section-title compact-section-title">
             <div>
-              <p className="eyebrow">Agenda</p>
+              <p className="eyebrow">PicoMap</p>
               <h1>Eventos</h1>
             </div>
             <button
@@ -180,9 +180,7 @@ export default function EventsPage() {
             {user ? (
               <form className="form-card compact-form" onSubmit={handleCreateEvent}>
                 {!picos.length ? (
-                  <p className="muted-text">
-                    Primeiro aprove ou crie um pico para conseguir abrir um evento aqui.
-                  </p>
+                  <p className="muted-text">Escolha um pico aprovado.</p>
                 ) : null}
                 <label>
                   Pico
@@ -263,7 +261,7 @@ export default function EventsPage() {
               </form>
             ) : (
               <div className="empty-state">
-                <p className="muted-text">Entre para publicar amistosos, campeonatos e encontros.</p>
+                <p className="muted-text">Entre para criar eventos.</p>
                 <Link className="primary-button small-link-button full-width" to="/entrar">
                   Entrar agora
                 </Link>

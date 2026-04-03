@@ -12,6 +12,7 @@ import {
   ProfileIcon,
   SearchIcon,
 } from './AppIcons'
+import MediaAsset from './MediaAsset'
 
 const navItems = [
   { to: '/mapa', label: 'Mapa', shortLabel: 'Mapa', Icon: MapIcon },
@@ -70,9 +71,8 @@ export default function AppLayout() {
     <div className="app-shell app-instagram-shell">
       <aside className="app-sidebar">
         <div className="sidebar-brand">
-          <p className="eyebrow">Social dos picos</p>
           <Link className="brand-link" to="/mapa">
-            PicoLiga
+            PicoMap
           </Link>
         </div>
 
@@ -104,10 +104,10 @@ export default function AppLayout() {
             Criar
           </button>
           <Link className="primary-button small-link-button full-width" to="/novo-pico">
-            Marcar novo pico
+            Novo pico
           </Link>
           <Link className="secondary-button small-link-button full-width" to="/perfil">
-            Meu perfil
+            Perfil
           </Link>
         </div>
 
@@ -115,7 +115,11 @@ export default function AppLayout() {
           {user ? (
             <>
               <div className="user-chip">
-                <div className="avatar-circle avatar-mini">{user.displayName.slice(0, 1).toUpperCase()}</div>
+                {user.avatarUrl ? (
+                  <MediaAsset className="avatar-circle avatar-mini" src={user.avatarUrl} alt={user.displayName} />
+                ) : (
+                  <div className="avatar-circle avatar-mini">{user.displayName.slice(0, 1).toUpperCase()}</div>
+                )}
                 <div>
                   <strong>{user.displayName}</strong>
                   <p>@{user.username}</p>
@@ -136,7 +140,7 @@ export default function AppLayout() {
       <div className="app-main-frame">
         <header className="app-topbar">
           <Link className="brand-link topbar-brand" to="/mapa">
-            PicoLiga
+            PicoMap
           </Link>
 
           <div className="topbar-actions">
@@ -156,7 +160,11 @@ export default function AppLayout() {
             ) : null}
             {user ? (
               <Link className="profile-nav-button" to="/perfil" aria-label="Abrir perfil">
-                <span className="profile-nav-avatar">{user.displayName.slice(0, 1).toUpperCase()}</span>
+                {user.avatarUrl ? (
+                  <MediaAsset className="profile-nav-avatar-image" src={user.avatarUrl} alt={user.displayName} />
+                ) : (
+                  <span className="profile-nav-avatar">{user.displayName.slice(0, 1).toUpperCase()}</span>
+                )}
               </Link>
             ) : (
               <Link className="primary-button small-link-button topbar-action" to="/entrar">
@@ -205,7 +213,11 @@ export default function AppLayout() {
             className={({ isActive }) => (isActive ? 'mobile-link active' : 'mobile-link')}
             aria-label="Perfil"
           >
-            <ProfileIcon size={23} />
+            {user.avatarUrl ? (
+              <MediaAsset className="mobile-link-avatar-image" src={user.avatarUrl} alt={user.displayName} />
+            ) : (
+              <ProfileIcon size={23} />
+            )}
             <span>Perfil</span>
           </NavLink>
         ) : null}

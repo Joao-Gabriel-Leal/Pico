@@ -93,8 +93,8 @@ export default function AuthPage() {
       <div className="auth-card">
         <div className="section-title">
           <div>
-            <p className="eyebrow">Entrar ou registrar</p>
-            <h1>{mode === 'login' ? 'Acessar sua conta' : 'Criar conta por etapas'}</h1>
+            <p className="eyebrow">PicoMap</p>
+            <h1>{mode === 'login' ? 'Entrar' : 'Criar conta'}</h1>
           </div>
           <Link className="text-link" to="/mapa">
             Voltar ao mapa
@@ -220,7 +220,7 @@ export default function AuthPage() {
                         favoriteSportIds: toggleId(current.favoriteSportIds, sportId),
                       }))
                     }
-                    helperText="Voce pode selecionar mais de um esporte e editar isso depois no perfil."
+                    helperText=""
                   />
                 </div>
 

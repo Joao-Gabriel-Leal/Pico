@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiRequest } from '../api'
 import MediaAsset from './MediaAsset'
+import ShareSheet from './ShareSheet'
 import { CommentIcon, HeartIcon, MoreIcon, SendIcon, ShareIcon } from './AppIcons'
 
 function formatDate(value) {
@@ -25,11 +26,8 @@ export default function SocialPostCard({
   const [savingLike, setSavingLike] = useState(false)
   const [savingComment, setSavingComment] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [sharingDm, setSharingDm] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
-  const [conversations, setConversations] = useState([])
-  const [following, setFollowing] = useState([])
-  const [shareTarget, setShareTarget] = useState('')
+  const [showShareSheet, setShowShareSheet] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const commentInputRef = useRef(null)
@@ -118,7 +116,7 @@ export default function SocialPostCard({
     try {
       await navigator.clipboard.writeText(shareUrl)
       setError('')
-      setMessage('Link copiado para a area de transferencia.')
+      setMessage('Link copiado.')
       setShowMenu(false)
     } catch {
       setError('Nao foi possivel copiar o link agora.')
@@ -130,10 +128,10 @@ export default function SocialPostCard({
       if (navigator.share) {
         await navigator.share({
           title: localItem.title,
-          text: `Olha esse post do ${localItem.pico?.name || 'PicoLiga'}`,
+          text: `Olha esse post do ${localItem.pico?.name || 'PicoMap'}`,
           url: shareUrl,
         })
-        setMessage('Compartilhamento externo iniciado.')
+        setMessage('Compartilhado.')
       } else {
         await handleCopyLink()
       }
@@ -141,276 +139,183 @@ export default function SocialPostCard({
     } catch {}
   }
 
-  async function loadConversationsForShare() {
-    if (!token || (conversations.length && following.length)) return
-
-    try {
-      const payload = await apiRequest('/api/dms', { token })
-      setConversations(payload.conversations || [])
-      setFollowing(payload.following || [])
-
-      if (payload.conversations?.[0]?.id) {
-        setShareTarget(`conversation:${payload.conversations[0].id}`)
-      } else if (payload.following?.[0]?.id) {
-        setShareTarget(`user:${payload.following[0].id}`)
-      } else {
-        setShareTarget('')
-      }
-    } catch (nextError) {
-      setError(nextError.message)
-    }
-  }
-
-  async function handleShareToDm() {
-    if (!token || !shareTarget || sharingDm) return
-
-    setSharingDm(true)
-    setError('')
-    setMessage('')
-
-    try {
-      let conversationId = ''
-      const [targetType, targetId] = shareTarget.split(':')
-
-      if (targetType === 'conversation') {
-        conversationId = targetId
-      }
-
-      if (targetType === 'user') {
-        const payload = await apiRequest('/api/dms', {
-          method: 'POST',
-          token,
-          body: {
-            recipientUserId: targetId,
-          },
-        })
-        conversationId = payload.conversation.id
-      }
-
-      await apiRequest(`/api/dms/${conversationId}/messages`, {
-        method: 'POST',
-        token,
-        body: {
-          text: `Olha esse post: ${localItem.title}\n${shareUrl}`,
-        },
-      })
-      setShowMenu(false)
-      setMessage('Post enviado na DM.')
-    } catch (nextError) {
-      setError(nextError.message)
-    } finally {
-      setSharingDm(false)
-    }
-  }
-
   return (
-    <article className="post-card social-post-card" id={`midia-${localItem.id}`}>
-      <div className="post-card-header">
-        {localItem.author?.id ? (
-          <Link className="user-chip post-author-link" to={`/pessoas/${localItem.author.id}`}>
-            {localItem.author?.avatarUrl ? (
-              <MediaAsset
-                className="avatar-circle avatar-mini"
-                src={localItem.author.avatarUrl}
-                alt={localItem.author.displayName}
-              />
-            ) : (
-              <div className="avatar-circle avatar-mini">
-                {(localItem.author?.displayName || 'P').slice(0, 1).toUpperCase()}
+    <>
+      <article className="post-card social-post-card" id={`midia-${localItem.id}`}>
+        <div className="post-card-header">
+          {localItem.author?.id ? (
+            <Link className="user-chip post-author-link" to={`/pessoas/${localItem.author.id}`}>
+              {localItem.author?.avatarUrl ? (
+                <MediaAsset
+                  className="avatar-circle avatar-mini"
+                  src={localItem.author.avatarUrl}
+                  alt={localItem.author.displayName}
+                />
+              ) : (
+                <div className="avatar-circle avatar-mini">
+                  {(localItem.author?.displayName || 'P').slice(0, 1).toUpperCase()}
+                </div>
+              )}
+              <div>
+                <strong>{localItem.author?.displayName || 'Comunidade'}</strong>
+                <p>
+                  @{localItem.author?.username || 'picomap'} - {formatDate(localItem.createdAt)}
+                </p>
               </div>
-            )}
-            <div>
-              <strong>{localItem.author?.displayName || 'Comunidade'}</strong>
-              <p>
-                {localItem.pico?.name || 'Pico'} · {formatDate(localItem.createdAt)}
-              </p>
-            </div>
-          </Link>
-        ) : (
-          <div className="user-chip post-author-link">
-            {localItem.author?.avatarUrl ? (
-              <MediaAsset
-                className="avatar-circle avatar-mini"
-                src={localItem.author.avatarUrl}
-                alt={localItem.author.displayName}
-              />
-            ) : (
-              <div className="avatar-circle avatar-mini">
-                {(localItem.author?.displayName || 'P').slice(0, 1).toUpperCase()}
-              </div>
-            )}
-            <div>
-              <strong>{localItem.author?.displayName || 'Comunidade'}</strong>
-              <p>
-                {localItem.pico?.name || 'Pico'} · {formatDate(localItem.createdAt)}
-              </p>
-            </div>
-          </div>
-        )}
-
-        <button
-          className="icon-button"
-          type="button"
-          aria-label="Mais opcoes"
-          onClick={async () => {
-            setShowMenu((current) => !current)
-            await loadConversationsForShare()
-          }}
-        >
-          <MoreIcon size={20} />
-        </button>
-      </div>
-
-      {showMenu ? (
-        <div className="post-menu">
-          <button className="post-menu-button" type="button" onClick={handleExternalShare}>
-            Compartilhar
-          </button>
-          <button className="post-menu-button" type="button" onClick={handleCopyLink}>
-            Copiar link
-          </button>
-          {token && (conversations.length || following.length) ? (
-            <div className="post-menu-share">
-              <select value={shareTarget} onChange={(event) => setShareTarget(event.target.value)}>
-                <option value="">Enviar por DM</option>
-                {conversations.map((conversation) => (
-                  <option key={conversation.id} value={`conversation:${conversation.id}`}>
-                    DM com {conversation.otherUser?.displayName || 'Conversa'}
-                  </option>
-                ))}
-                {following
-                  .filter(
-                    (person) =>
-                      !conversations.some((conversation) => conversation.otherUser?.id === person.id),
-                  )
-                  .map((person) => (
-                  <option key={person.id} value={`user:${person.id}`}>
-                    Nova DM com {person.displayName}
-                  </option>
-                ))}
-              </select>
-              <button className="secondary-button small-link-button" type="button" onClick={handleShareToDm} disabled={!shareTarget || sharingDm}>
-                {sharingDm ? 'Enviando...' : 'Enviar'}
-              </button>
-            </div>
-          ) : null}
-          {localItem.permissions?.canDelete ? (
-            <button className="post-menu-button danger" type="button" onClick={handleDelete}>
-              {deleting ? 'Removendo...' : 'Remover publicacao'}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
-      <MediaAsset
-        className={localItem.mediaType === 'video' ? 'feed-video' : 'cover-thumb'}
-        src={localItem.fileUrl}
-        alt={localItem.title}
-        mediaType={localItem.mediaType}
-        autoPlayInView={localItem.mediaType === 'video' && autoPlayVideo}
-        controls={localItem.mediaType !== 'video' || !autoPlayVideo}
-        expandable
-      />
-
-      <div className="post-card-body">
-        <div className="post-action-row instagram-action-row">
-          <button
-            className={localItem.isLiked ? 'icon-button active' : 'icon-button'}
-            type="button"
-            onClick={handleLike}
-            disabled={!token || savingLike || !localItem.permissions?.canLike}
-            aria-label={localItem.isLiked ? 'Descurtir' : 'Curtir'}
-          >
-            <HeartIcon size={21} filled={localItem.isLiked} />
-          </button>
-          <button
-            className="icon-button"
-            type="button"
-            onClick={() => commentInputRef.current?.focus()}
-            aria-label="Comentar"
-          >
-            <CommentIcon size={21} />
-          </button>
-          <button
-            className={showMenu ? 'icon-button active' : 'icon-button'}
-            type="button"
-            onClick={() => {
-              setShowMenu((current) => !current)
-              loadConversationsForShare()
-            }}
-            aria-label="Enviar na DM"
-          >
-            <SendIcon size={21} />
-          </button>
-          <button
-            className="icon-button"
-            type="button"
-            onClick={handleExternalShare}
-            aria-label="Compartilhar"
-          >
-            <ShareIcon size={21} />
-          </button>
-          {showPicoLink && localItem.pico ? (
-            <Link className="post-inline-link" to={`/picos/${localItem.pico.slug}`}>
-              Ver pico
             </Link>
+          ) : (
+            <div className="user-chip post-author-link">
+              <div className="avatar-circle avatar-mini">
+                {(localItem.author?.displayName || 'P').slice(0, 1).toUpperCase()}
+              </div>
+              <div>
+                <strong>{localItem.author?.displayName || 'Comunidade'}</strong>
+                <p>{formatDate(localItem.createdAt)}</p>
+              </div>
+            </div>
+          )}
+
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Mais opcoes"
+            onClick={() => setShowMenu((current) => !current)}
+          >
+            <MoreIcon size={20} />
+          </button>
+        </div>
+
+        {showMenu ? (
+          <div className="post-menu">
+            <button className="post-menu-button" type="button" onClick={handleExternalShare}>
+              Compartilhar
+            </button>
+            <button className="post-menu-button" type="button" onClick={handleCopyLink}>
+              Copiar link
+            </button>
+            {localItem.permissions?.canDelete ? (
+              <button className="post-menu-button danger" type="button" onClick={handleDelete}>
+                {deleting ? 'Removendo...' : 'Remover'}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
+        <MediaAsset
+          className={localItem.mediaType === 'video' ? 'feed-video' : 'cover-thumb'}
+          src={localItem.fileUrl}
+          alt={localItem.title}
+          mediaType={localItem.mediaType}
+          autoPlayInView={localItem.mediaType === 'video' && autoPlayVideo}
+          controls={localItem.mediaType !== 'video' || !autoPlayVideo}
+          expandable
+        />
+
+        <div className="post-card-body">
+          <div className="post-action-row instagram-action-row">
+            <button
+              className={localItem.isLiked ? 'icon-button active' : 'icon-button'}
+              type="button"
+              onClick={handleLike}
+              disabled={!token || savingLike || !localItem.permissions?.canLike}
+              aria-label={localItem.isLiked ? 'Descurtir' : 'Curtir'}
+            >
+              <HeartIcon size={21} filled={localItem.isLiked} />
+            </button>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => commentInputRef.current?.focus()}
+              aria-label="Comentar"
+            >
+              <CommentIcon size={21} />
+            </button>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => setShowShareSheet(true)}
+              aria-label="Enviar na DM"
+            >
+              <SendIcon size={21} />
+            </button>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={handleExternalShare}
+              aria-label="Compartilhar"
+            >
+              <ShareIcon size={21} />
+            </button>
+            {showPicoLink && localItem.pico ? (
+              <Link className="post-inline-link" to={`/picos/${localItem.pico.slug}`}>
+                Ver pico
+              </Link>
+            ) : null}
+          </div>
+
+          <strong>{localItem.likesCount} curtidas</strong>
+          {Array.isArray(localItem.likedBy) && localItem.likedBy.length ? (
+            <p className="liked-by-line">
+              Curtido por{' '}
+              <strong>
+                {localItem.likedBy
+                  .slice(0, 3)
+                  .map((person) => person.displayName)
+                  .join(', ')}
+              </strong>
+            </p>
+          ) : null}
+          <p className="post-caption-line">
+            <strong>{localItem.author?.username || localItem.author?.displayName || 'picomap'}</strong>{' '}
+            {localItem.title}
+          </p>
+          {(localItem.commentsCount || localItem.comments?.length || 0) ? (
+            <span className="post-meta-link">
+              {localItem.commentsCount || localItem.comments?.length || 0} comentarios
+            </span>
           ) : null}
         </div>
 
-        <strong>{localItem.likesCount} curtidas</strong>
-        {Array.isArray(localItem.likedBy) && localItem.likedBy.length ? (
-          <p className="liked-by-line">
-            Curtido por{' '}
-            <strong>
-              {localItem.likedBy
-                .slice(0, 3)
-                .map((person) => person.displayName)
-                .join(', ')}
-            </strong>
-          </p>
+        {recentComments.length ? (
+          <div className="comment-stack">
+            {recentComments.map((comment) => (
+              <div key={comment.id} className="comment-card">
+                <strong>{comment.author?.displayName || 'Comunidade'}</strong>
+                <p>{comment.text}</p>
+              </div>
+            ))}
+          </div>
         ) : null}
-        <p className="post-caption-line">
-          <strong>{localItem.author?.username || localItem.author?.displayName || 'picoliga'}</strong>{' '}
-          {localItem.title}
-        </p>
-        {(localItem.commentsCount || localItem.comments?.length || 0) ? (
-          <span className="post-meta-link">
-            {localItem.commentsCount || localItem.comments?.length || 0} comentarios
-          </span>
+
+        {currentUser && localItem.permissions?.canComment ? (
+          <form className="comment-form" onSubmit={handleCommentSubmit}>
+            <input
+              ref={commentInputRef}
+              value={commentText}
+              onChange={(event) => setCommentText(event.target.value)}
+              placeholder="Escreva um comentario..."
+            />
+            <button
+              className="post-inline-link send-comment-button"
+              type="submit"
+              disabled={savingComment || !commentText.trim()}
+            >
+              {savingComment ? 'Enviando...' : 'Enviar'}
+            </button>
+          </form>
         ) : null}
-      </div>
 
-      {recentComments.length ? (
-        <div className="comment-stack">
-          {recentComments.map((comment) => (
-            <div key={comment.id} className="comment-card">
-              <strong>{comment.author?.displayName || 'Comunidade'}</strong>
-              <p>{comment.text}</p>
-            </div>
-          ))}
-        </div>
-      ) : null}
+        {message ? <p className="success-text">{message}</p> : null}
+        {error ? <p className="error-text">{error}</p> : null}
+      </article>
 
-      {currentUser && localItem.permissions?.canComment ? (
-        <form className="comment-form" onSubmit={handleCommentSubmit}>
-          <input
-            ref={commentInputRef}
-            value={commentText}
-            onChange={(event) => setCommentText(event.target.value)}
-            placeholder="Escreva um comentario..."
-          />
-          <button
-            className="post-inline-link send-comment-button"
-            type="submit"
-            disabled={savingComment || !commentText.trim()}
-          >
-            {savingComment ? 'Enviando...' : 'Enviar'}
-          </button>
-        </form>
-      ) : null}
-
-      {message ? <p className="success-text">{message}</p> : null}
-      {error ? <p className="error-text">{error}</p> : null}
-    </article>
+      <ShareSheet
+        open={showShareSheet}
+        onClose={() => setShowShareSheet(false)}
+        token={token}
+        media={localItem}
+        onShared={() => setMessage('Enviado na DM.')}
+      />
+    </>
   )
 }

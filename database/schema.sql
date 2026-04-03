@@ -200,6 +200,10 @@ create table if not exists crowdfunding_contribution (
 
 create table if not exists direct_conversation (
   id uuid primary key default gen_random_uuid(),
+  is_group boolean not null default false,
+  title text default '',
+  avatar_url text default '',
+  created_by uuid references app_user(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -215,8 +219,19 @@ create table if not exists direct_message (
   id uuid primary key default gen_random_uuid(),
   conversation_id uuid not null references direct_conversation(id) on delete cascade,
   sender_id uuid not null references app_user(id) on delete cascade,
-  text_content text not null,
+  text_content text not null default '',
+  message_type text not null default 'text',
+  shared_media_id uuid references pico_media(id) on delete set null,
+  preview_text text default '',
   created_at timestamptz not null default now()
+);
+
+create table if not exists direct_message_reaction (
+  message_id uuid not null references direct_message(id) on delete cascade,
+  user_id uuid not null references app_user(id) on delete cascade,
+  reaction text not null default 'heart',
+  created_at timestamptz not null default now(),
+  primary key (message_id, user_id, reaction)
 );
 
 alter table pico add column if not exists updated_at timestamptz not null default now();
@@ -230,7 +245,16 @@ alter table pico_event add column if not exists updated_at timestamptz not null 
 alter table pico_event add column if not exists approval_status text not null default 'approved';
 alter table pico_event add column if not exists approved_by uuid references app_user(id) on delete set null;
 alter table pico_event add column if not exists approved_at timestamptz;
+alter table direct_conversation add column if not exists is_group boolean not null default false;
+alter table direct_conversation add column if not exists title text default '';
+alter table direct_conversation add column if not exists avatar_url text default '';
+alter table direct_conversation add column if not exists created_by uuid references app_user(id) on delete set null;
 alter table direct_conversation_participant add column if not exists last_read_at timestamptz not null default now();
+alter table direct_message add column if not exists message_type text not null default 'text';
+alter table direct_message add column if not exists shared_media_id uuid references pico_media(id) on delete set null;
+alter table direct_message add column if not exists preview_text text default '';
+alter table direct_message alter column text_content set default '';
+update direct_message set text_content = '' where text_content is null;
 
 create index if not exists permission_key_idx on permission (key);
 create index if not exists user_role_role_id_idx on user_role (role_id);
@@ -256,5 +280,10 @@ create unique index if not exists crowdfunding_campaign_one_active_per_pico_idx
   on crowdfunding_campaign (pico_id)
   where status = 'active';
 create index if not exists direct_conversation_updated_at_idx on direct_conversation (updated_at desc);
+create index if not exists direct_conversation_group_updated_at_idx on direct_conversation (is_group, updated_at desc);
 create index if not exists direct_message_conversation_created_at_idx
   on direct_message (conversation_id, created_at);
+create index if not exists direct_message_type_created_at_idx
+  on direct_message (message_type, created_at desc);
+create index if not exists direct_message_reaction_message_id_idx
+  on direct_message_reaction (message_id);

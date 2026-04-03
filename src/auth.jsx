@@ -2,10 +2,11 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { apiRequest } from './api'
 
 const AuthContext = createContext(null)
-const storageKey = 'picoliga_token'
+const storageKey = 'picomap_token'
+const legacyStorageKey = 'picoliga_token'
 
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem(storageKey) || '')
+  const [token, setToken] = useState(() => localStorage.getItem(storageKey) || localStorage.getItem(legacyStorageKey) || '')
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -21,6 +22,7 @@ export function AuthProvider({ children }) {
         setUser(payload.user)
       } catch {
         localStorage.removeItem(storageKey)
+        localStorage.removeItem(legacyStorageKey)
         setToken('')
         setUser(null)
       } finally {
@@ -33,6 +35,7 @@ export function AuthProvider({ children }) {
 
   function persist(tokenValue, userValue) {
     localStorage.setItem(storageKey, tokenValue)
+    localStorage.removeItem(legacyStorageKey)
     setToken(tokenValue)
     setUser(userValue)
   }
@@ -64,6 +67,7 @@ export function AuthProvider({ children }) {
 
   function logout() {
     localStorage.removeItem(storageKey)
+    localStorage.removeItem(legacyStorageKey)
     setToken('')
     setUser(null)
   }

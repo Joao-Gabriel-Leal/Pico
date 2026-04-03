@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { apiRequest } from '../api'
 import { useAuth } from '../auth'
 import MediaAsset from '../components/MediaAsset'
-import SocialPostCard from '../components/SocialPostCard'
+import PostDialog from '../components/PostDialog'
 
 export default function UserProfilePage() {
   const { userId } = useParams()
@@ -11,12 +11,14 @@ export default function UserProfilePage() {
   const { token, user, refreshUser } = useAuth()
   const [detail, setDetail] = useState(null)
   const [tab, setTab] = useState('posts')
-  const [error, setError] = useState('')
+  const [selectedPost, setSelectedPost] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
 
   async function loadPage() {
     const payload = await apiRequest(`/api/people/${userId}`, { token })
     setDetail(payload)
+    setSelectedPost((current) => current || payload.posts?.[0] || null)
   }
 
   useEffect(() => {
@@ -25,16 +27,18 @@ export default function UserProfilePage() {
 
   const currentItems = useMemo(() => {
     if (!detail) return []
-    if (tab === 'liked') return detail.likedPicos
-    if (tab === 'following') return detail.followedPicos
+    if (tab === 'picos') return detail.followedPicos
     if (tab === 'visited') return detail.visitedPicos
+    if (tab === 'liked') return detail.likedPicos
     return detail.posts
   }, [detail, tab])
 
   async function handleToggleFollow() {
     if (!token || !detail) return
+
     setBusy(true)
     setError('')
+
     try {
       await apiRequest(`/api/people/${detail.person.id}/follow`, { method: 'POST', token })
       await refreshUser()
@@ -48,6 +52,7 @@ export default function UserProfilePage() {
 
   async function handleMessage() {
     if (!token || !detail) return
+
     setBusy(true)
     setError('')
 
@@ -55,9 +60,7 @@ export default function UserProfilePage() {
       const payload = await apiRequest('/api/dms', {
         method: 'POST',
         token,
-        body: {
-          recipientUserId: detail.person.id,
-        },
+        body: { recipientUserId: detail.person.id },
       })
       navigate(`/conversas?conversation=${payload.conversation.id}`)
     } catch (nextError) {
@@ -72,82 +75,153 @@ export default function UserProfilePage() {
   }
 
   if (!detail) {
-    return <section className="simple-page"><div className="side-card"><p className="muted-text">Carregando perfil...</p></div></section>
+    return <section className="simple-page"><div className="dark-empty-state">Carregando perfil...</div></section>
   }
 
   return (
-    <section className="page-grid social-page">
-      <div className="page-column page-column-main feed-column">
-        <div className="side-card instagram-profile-card">
-          <div className="instagram-profile-main">
+    <section className="profile-page instagram-like-page">
+      <div className="profile-hero-card">
+        <div className="profile-hero-top">
+          <div className="profile-hero-avatar-block">
             {detail.person.avatarUrl ? (
-              <MediaAsset className="instagram-avatar" src={detail.person.avatarUrl} alt={detail.person.displayName} />
+              <MediaAsset className="profile-avatar-hero" src={detail.person.avatarUrl} alt={detail.person.displayName} />
             ) : (
-              <div className="avatar-circle instagram-avatar">{detail.person.displayName.slice(0, 1).toUpperCase()}</div>
+              <div className="avatar-circle profile-avatar-hero">
+                {detail.person.displayName.slice(0, 1).toUpperCase()}
+              </div>
             )}
-            <div className="instagram-profile-body">
-              <div className="section-title">
-                <div>
-                  <h1>{detail.person.displayName}</h1>
-                  <p className="muted-text">@{detail.person.username}</p>
-                </div>
+          </div>
+
+          <div className="profile-hero-main">
+            <div className="profile-identity-row">
+              <div>
+                <h1>{detail.person.displayName}</h1>
+                <p>@{detail.person.username}</p>
               </div>
-              <div className="instagram-profile-counts">
-                <article><strong>{detail.posts.length}</strong><span>posts</span></article>
-                <article><strong>{detail.person.followerCount}</strong><span>seguidores</span></article>
-                <article><strong>{detail.person.followingCount}</strong><span>seguindo</span></article>
-              </div>
-              <p className="hero-copy">{detail.person.bio || 'Sem bio por enquanto.'}</p>
-              <div className="inline-actions wrap-actions">
-                {user && user.id !== detail.person.id ? (
-                  <button
-                    className={detail.person.isFollowing ? 'secondary-button small-link-button' : 'primary-button small-link-button'}
-                    type="button"
-                    disabled={busy}
-                    onClick={handleToggleFollow}
-                  >
-                    {busy ? 'Aguarde...' : detail.person.isFollowing ? 'Seguindo' : 'Seguir'}
-                  </button>
-                ) : null}
-                {user && user.id !== detail.person.id ? (
-                  <button className="secondary-button small-link-button" type="button" onClick={handleMessage}>
+            </div>
+
+            <div className="profile-count-strip">
+              <article>
+                <strong>{detail.posts.length}</strong>
+                <span>posts</span>
+              </article>
+              <article>
+                <strong>{detail.person.followerCount}</strong>
+                <span>seguidores</span>
+              </article>
+              <article>
+                <strong>{detail.person.followingCount}</strong>
+                <span>seguindo</span>
+              </article>
+            </div>
+
+            <div className="profile-bio-block">
+              <strong>{detail.person.displayName}</strong>
+              {detail.person.bio ? <p>{detail.person.bio}</p> : null}
+            </div>
+
+            {user && user.id !== detail.person.id ? (
+              <div className="profile-primary-actions">
+                <button
+                  className={detail.person.isFollowing ? 'secondary-button small-link-button' : 'primary-button small-link-button'}
+                  type="button"
+                  disabled={busy}
+                  onClick={handleToggleFollow}
+                >
+                  {busy ? 'Aguarde...' : detail.person.isFollowing ? 'Seguindo' : 'Seguir'}
+                </button>
+                {detail.person.isMutual ? (
+                  <button className="secondary-button small-link-button" type="button" disabled={busy} onClick={handleMessage}>
                     Mensagem
                   </button>
                 ) : null}
               </div>
-            </div>
+            ) : null}
           </div>
         </div>
+      </div>
 
-        <div className="toolbar-card">
-          <div className="chip-row">
-            <button className={tab === 'posts' ? 'chip active' : 'chip'} onClick={() => setTab('posts')}>Posts</button>
-            <button className={tab === 'liked' ? 'chip active' : 'chip'} onClick={() => setTab('liked')}>Curtiu</button>
-            <button className={tab === 'following' ? 'chip active' : 'chip'} onClick={() => setTab('following')}>Segue</button>
-            <button className={tab === 'visited' ? 'chip active' : 'chip'} onClick={() => setTab('visited')}>Ja andou</button>
-          </div>
+      <div className="profile-tab-bar">
+        <button className={tab === 'posts' ? 'profile-tab active' : 'profile-tab'} type="button" onClick={() => setTab('posts')}>
+          Posts
+        </button>
+        <button className={tab === 'picos' ? 'profile-tab active' : 'profile-tab'} type="button" onClick={() => setTab('picos')}>
+          Picos
+        </button>
+        <button className={tab === 'visited' ? 'profile-tab active' : 'profile-tab'} type="button" onClick={() => setTab('visited')}>
+          Andei
+        </button>
+        <button className={tab === 'liked' ? 'profile-tab active' : 'profile-tab'} type="button" onClick={() => setTab('liked')}>
+          Curti
+        </button>
+      </div>
+
+      {tab === 'posts' ? (
+        <div className="profile-posts-grid">
+          {currentItems.length ? (
+            currentItems.map((item) => (
+              <button key={item.id} className="profile-post-tile" type="button" onClick={() => setSelectedPost(item)}>
+                <MediaAsset
+                  className="profile-post-thumb"
+                  src={item.fileUrl}
+                  alt={item.title}
+                  mediaType={item.mediaType}
+                  controls={false}
+                />
+                {item.mediaType === 'video' ? <span className="profile-post-badge">video</span> : null}
+              </button>
+            ))
+          ) : (
+            <div className="dark-empty-state">Nenhuma publicacao ainda.</div>
+          )}
         </div>
-
-        {tab === 'posts' ? (
-          <div className="list-stack">
-            {currentItems.length ? currentItems.map((item) => (
-              <SocialPostCard key={item.id} item={item} token={token} currentUser={user} />
-            )) : <div className="side-card empty-state"><p className="muted-text">Ainda nao ha publicacoes nesse perfil.</p></div>}
-          </div>
-        ) : (
-          <div className="list-stack">
-            {currentItems.length ? currentItems.map((item) => (
-              <Link key={item.id} className="list-item" to={`/picos/${item.slug}`}>
+      ) : (
+        <div className="profile-pico-list">
+          {currentItems.length ? (
+            currentItems.map((item) => (
+              <Link key={item.id} className="profile-pico-row" to={`/picos/${item.slug}`}>
                 <div>
                   <strong>{item.name}</strong>
                   <p>{item.sport?.name}</p>
                 </div>
                 <span>{item.voteCount} curtidas</span>
               </Link>
-            )) : <div className="side-card empty-state"><p className="muted-text">Nada para mostrar nessa aba ainda.</p></div>}
-          </div>
-        )}
-      </div>
+            ))
+          ) : (
+            <div className="dark-empty-state">Nada nesta aba ainda.</div>
+          )}
+        </div>
+      )}
+
+      {error ? <p className="error-text">{error}</p> : null}
+
+      <PostDialog
+        item={selectedPost}
+        token={token}
+        currentUser={user}
+        onClose={() => setSelectedPost(null)}
+        onUpdated={(updatedItem) =>
+          setDetail((current) =>
+            current
+              ? {
+                  ...current,
+                  posts: current.posts.map((item) => (item.id === updatedItem.id ? { ...item, ...updatedItem } : item)),
+                }
+              : current,
+          )
+        }
+        onDeleted={(mediaId) => {
+          setDetail((current) =>
+            current
+              ? {
+                  ...current,
+                  posts: current.posts.filter((item) => item.id !== mediaId),
+                }
+              : current,
+          )
+          setSelectedPost((current) => (current?.id === mediaId ? null : current))
+        }}
+      />
     </section>
   )
 }

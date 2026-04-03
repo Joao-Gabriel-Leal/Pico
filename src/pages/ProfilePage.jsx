@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { apiRequest } from '../api'
 import { useAuth } from '../auth'
 import MediaAsset from '../components/MediaAsset'
-import SocialPostCard from '../components/SocialPostCard'
+import PostDialog from '../components/PostDialog'
 import SportPicker from '../components/SportPicker'
 import { uploadSelectedFile } from '../utils/files'
 import { formatLocation, getCurrentPosition } from '../utils/geo'
@@ -15,18 +15,16 @@ function toggleId(list, id) {
 export default function ProfilePage() {
   const { user, token, refreshUser, logout } = useAuth()
   const [sports, setSports] = useState([])
-  const [roles, setRoles] = useState([])
-  const [feedItems, setFeedItems] = useState([])
-  const [people, setPeople] = useState([])
-  const [moderation, setModeration] = useState({ pendingPicos: [], pendingEvents: [] })
+  const [detail, setDetail] = useState(null)
+  const [moderation, setModeration] = useState({ picos: [], events: [] })
+  const [tab, setTab] = useState('posts')
+  const [showEdit, setShowEdit] = useState(false)
+  const [selectedPost, setSelectedPost] = useState(null)
   const [saving, setSaving] = useState(false)
   const [capturingLocation, setCapturingLocation] = useState(false)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
-  const [moderating, setModerating] = useState(false)
-  const [showEdit, setShowEdit] = useState(false)
-  const [selectedPostId, setSelectedPostId] = useState('')
-  const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
   const [form, setForm] = useState({
     displayName: '',
     bio: '',
@@ -34,33 +32,33 @@ export default function ProfilePage() {
     location: null,
     favoriteSportIds: [],
   })
-  const canModerate = user?.permissions?.includes('pico.approve') || user?.permissions?.includes('event.approve')
+
+  const canModerate =
+    user?.permissions?.includes('pico.approve') || user?.permissions?.includes('event.approve')
 
   async function loadPage() {
-    if (!token) return
+    if (!token || !user) return
+
     const requests = [
       apiRequest('/api/auth/options'),
-      apiRequest('/api/feed?authorId=me&limit=12&offset=0', { token }),
-      apiRequest('/api/people', { token }),
+      apiRequest(`/api/people/${user.id}`, { token }),
     ]
-    if (canModerate) requests.push(apiRequest('/api/moderation', { token }))
 
-    const [optionsPayload, feedPayload, peoplePayload, moderationPayload] = await Promise.all(requests)
-    setSports(optionsPayload.sports)
-    setRoles(optionsPayload.roles || [])
-    setFeedItems(feedPayload.items)
-    setSelectedPostId((current) => current || feedPayload.items[0]?.id || '')
-    setPeople(peoplePayload.items)
-    setModeration({
-      pendingPicos: moderationPayload?.picos || [],
-      pendingEvents: moderationPayload?.events || [],
-    })
+    if (canModerate) {
+      requests.push(apiRequest('/api/moderation', { token }))
+    }
+
+    const [optionsPayload, profilePayload, moderationPayload] = await Promise.all(requests)
+    setSports(optionsPayload.sports || [])
+    setDetail(profilePayload)
+    setModeration(moderationPayload || { picos: [], events: [] })
+    setSelectedPost((current) => current || profilePayload.posts?.[0] || null)
   }
 
   useEffect(() => {
-    if (!token) return
+    if (!token || !user) return
     loadPage().catch((nextError) => setError(nextError.message))
-  }, [token, canModerate])
+  }, [token, user?.id, canModerate])
 
   useEffect(() => {
     if (!user) return
@@ -73,14 +71,18 @@ export default function ProfilePage() {
     })
   }, [user])
 
-  const selectedPost = useMemo(
-    () => feedItems.find((item) => item.id === selectedPostId) || feedItems[0] || null,
-    [feedItems, selectedPostId],
-  )
+  const currentItems = useMemo(() => {
+    if (!detail) return []
+    if (tab === 'picos') return detail.followedPicos
+    if (tab === 'visited') return detail.visitedPicos
+    if (tab === 'liked') return detail.likedPicos
+    return detail.posts
+  }, [detail, tab])
 
   async function captureLocation() {
     setCapturingLocation(true)
     setError('')
+
     try {
       const location = await getCurrentPosition()
       setForm((current) => ({ ...current, location }))
@@ -94,8 +96,10 @@ export default function ProfilePage() {
   async function handleAvatarChange(event) {
     const file = event.target.files?.[0]
     if (!file) return
+
     setUploadingAvatar(true)
     setError('')
+
     try {
       const uploadedUrl = await uploadSelectedFile(file, { token, kind: 'image' })
       setForm((current) => ({ ...current, avatarUrl: uploadedUrl }))
@@ -112,12 +116,17 @@ export default function ProfilePage() {
     setSaving(true)
     setError('')
     setMessage('')
+
     try {
-      await apiRequest('/api/me', { method: 'PUT', token, body: form })
+      await apiRequest('/api/me', {
+        method: 'PUT',
+        token,
+        body: form,
+      })
       await refreshUser()
       await loadPage()
       setShowEdit(false)
-      setMessage('Perfil atualizado com sucesso.')
+      setMessage('Perfil atualizado.')
     } catch (nextError) {
       setError(nextError.message)
     } finally {
@@ -125,221 +134,307 @@ export default function ProfilePage() {
     }
   }
 
-  async function handleToggleFollow(targetUserId) {
-    setError('')
-    try {
-      await apiRequest(`/api/people/${targetUserId}/follow`, { method: 'POST', token })
-      await refreshUser()
-      await loadPage()
-    } catch (nextError) {
-      setError(nextError.message)
-    }
-  }
+  async function handleShareProfile() {
+    const url = `${window.location.origin}/pessoas/${user.id}`
 
-  async function handleToggleRole(targetUserId, roleSlug, hasRole) {
-    setError('')
     try {
-      await apiRequest(
-        hasRole ? `/api/users/${targetUserId}/roles/${roleSlug}` : `/api/users/${targetUserId}/roles`,
-        { method: hasRole ? 'DELETE' : 'POST', token, body: hasRole ? undefined : { roleSlug } },
-      )
-      await refreshUser()
-      await loadPage()
-    } catch (nextError) {
-      setError(nextError.message)
+      if (navigator.share) {
+        await navigator.share({
+          title: form.displayName || user.displayName,
+          text: `Perfil no PicoMap`,
+          url,
+        })
+      } else {
+        await navigator.clipboard.writeText(url)
+      }
+      setMessage('Perfil compartilhado.')
+    } catch {
+      setError('Nao foi possivel compartilhar o perfil agora.')
     }
   }
 
   async function handleModerationAction(kind, targetId, action) {
     setError('')
     setMessage('')
-    setModerating(true)
+
     try {
-      const route = kind === 'pico' ? `/api/moderation/picos/${targetId}/${action}` : `/api/moderation/events/${targetId}/${action}`
+      const route =
+        kind === 'pico'
+          ? `/api/moderation/picos/${targetId}/${action}`
+          : `/api/moderation/events/${targetId}/${action}`
       await apiRequest(route, { method: 'POST', token })
       await loadPage()
-      setMessage(action === 'approve' ? 'Item aprovado com sucesso.' : 'Item rejeitado.')
+      setMessage(action === 'approve' ? 'Aprovado.' : 'Rejeitado.')
     } catch (nextError) {
       setError(nextError.message)
-    } finally {
-      setModerating(false)
     }
   }
 
   function handlePostUpdated(updatedItem) {
-    setFeedItems((current) => current.map((item) => (item.id === updatedItem.id ? { ...item, ...updatedItem } : item)))
+    setDetail((current) =>
+      current
+        ? {
+            ...current,
+            posts: current.posts.map((item) => (item.id === updatedItem.id ? { ...item, ...updatedItem } : item)),
+          }
+        : current,
+    )
+    setSelectedPost((current) => (current?.id === updatedItem.id ? { ...current, ...updatedItem } : current))
   }
 
   function handlePostDeleted(mediaId) {
-    setFeedItems((current) => current.filter((item) => item.id !== mediaId))
-    setSelectedPostId((current) => (current === mediaId ? '' : current))
+    setDetail((current) =>
+      current
+        ? {
+            ...current,
+            posts: current.posts.filter((item) => item.id !== mediaId),
+          }
+        : current,
+    )
+    setSelectedPost((current) => (current?.id === mediaId ? null : current))
   }
 
   if (!user) {
     return (
       <section className="simple-page">
         <div className="side-card">
-          <h1>Entre para editar seu perfil</h1>
-          <p className="muted-text">O perfil agora ficou mais proximo do Instagram, com grade de posts e edicao propria.</p>
-          <Link className="primary-button small-link-button" to="/entrar">Entrar agora</Link>
+          <h1>Entre para abrir seu perfil</h1>
+          <Link className="primary-button small-link-button" to="/entrar">
+            Entrar agora
+          </Link>
         </div>
       </section>
     )
   }
 
+  if (!detail) {
+    return <section className="simple-page"><div className="dark-empty-state">Carregando perfil...</div></section>
+  }
+
   return (
-    <section className="page-grid social-page">
-      <div className="page-column page-column-main feed-column">
-        <div className="side-card instagram-profile-card">
-          <div className="instagram-profile-top">
-            <div className="instagram-profile-main">
-              {form.avatarUrl ? <MediaAsset className="instagram-avatar" src={form.avatarUrl} alt={user.displayName} /> : <div className="avatar-circle instagram-avatar">{user.displayName.slice(0, 1).toUpperCase()}</div>}
-              <div className="instagram-profile-body">
-                <div className="section-title">
-                  <div>
-                    <h1>{user.displayName}</h1>
-                    <p className="muted-text">@{user.username}</p>
-                  </div>
-                  <span className="status-pill">{formatLocation(form.location)}</span>
-                </div>
-                <div className="instagram-profile-counts">
-                  <article><strong>{user.mediaCount}</strong><span>posts</span></article>
-                  <article><strong>{user.followerCount}</strong><span>seguidores</span></article>
-                  <article><strong>{user.followingCount}</strong><span>seguindo</span></article>
-                </div>
-                <p className="hero-copy">{form.bio || 'Conte quem voce e, quais esportes voce curte e quais picos faz parte.'}</p>
-                <div className="inline-actions wrap-actions">
-                  <button className="secondary-button small-link-button" type="button" onClick={() => setShowEdit((current) => !current)}>{showEdit ? 'Fechar edicao' : 'Editar perfil'}</button>
-                  <Link className="primary-button small-link-button" to="/feed?compose=1">Nova publicacao</Link>
-                  <button className="ghost-button small-button profile-logout-button" type="button" onClick={logout}>Sair</button>
-                </div>
+    <section className="profile-page instagram-like-page">
+      <div className="profile-hero-card">
+        <div className="profile-hero-top">
+          <div className="profile-hero-avatar-block">
+            {form.avatarUrl ? (
+              <MediaAsset className="profile-avatar-hero" src={form.avatarUrl} alt={form.displayName || user.displayName} />
+            ) : (
+              <div className="avatar-circle profile-avatar-hero">
+                {(form.displayName || user.displayName).slice(0, 1).toUpperCase()}
               </div>
-            </div>
+            )}
           </div>
 
-          {showEdit ? (
-            <form className="form-card" onSubmit={handleSubmit}>
-              <label>Nome exibido<input value={form.displayName} onChange={(event) => setForm((current) => ({ ...current, displayName: event.target.value }))} /></label>
-              <div className="location-box">
-                <div><strong>Sua localizacao</strong><p>{formatLocation(form.location)}</p></div>
-                <button className="secondary-button" type="button" onClick={captureLocation}>{capturingLocation ? 'Atualizando...' : 'Atualizar localizacao'}</button>
-              </div>
-              <label>Foto de perfil<input type="file" accept="image/*" onChange={handleAvatarChange} /></label>
-              <label>Bio<textarea rows="4" value={form.bio} onChange={(event) => setForm((current) => ({ ...current, bio: event.target.value }))} /></label>
+          <div className="profile-hero-main">
+            <div className="profile-identity-row">
               <div>
-                <label>Esportes favoritos</label>
-                <SportPicker
-                  sports={sports}
-                  selectedIds={form.favoriteSportIds}
-                  onToggle={(sportId) => setForm((current) => ({ ...current, favoriteSportIds: toggleId(current.favoriteSportIds, sportId) }))}
-                  helperText="Escolha quantos esportes fizer sentido para voce. Isso pode ser alterado a qualquer momento."
-                />
+                <h1>{form.displayName || user.displayName}</h1>
+                <p>@{user.username}</p>
               </div>
-              {error ? <p className="error-text">{error}</p> : null}
-              {message ? <p className="success-text">{message}</p> : null}
-              <button className="primary-button full-width" disabled={saving || uploadingAvatar || !form.location}>{saving ? 'Salvando...' : 'Salvar perfil'}</button>
-            </form>
-          ) : null}
+            </div>
+
+            <div className="profile-count-strip">
+              <article>
+                <strong>{detail.posts.length}</strong>
+                <span>posts</span>
+              </article>
+              <article>
+                <strong>{detail.person.followerCount}</strong>
+                <span>seguidores</span>
+              </article>
+              <article>
+                <strong>{detail.person.followingCount}</strong>
+                <span>seguindo</span>
+              </article>
+            </div>
+
+            <div className="profile-bio-block">
+              <strong>{form.displayName || user.displayName}</strong>
+              {form.bio ? <p>{form.bio}</p> : null}
+              <span>{formatLocation(form.location)}</span>
+            </div>
+
+            <div className="profile-primary-actions">
+              <button className="secondary-button small-link-button" type="button" onClick={() => setShowEdit((current) => !current)}>
+                {showEdit ? 'Fechar' : 'Editar perfil'}
+              </button>
+              <button className="secondary-button small-link-button" type="button" onClick={handleShareProfile}>
+                Compartilhar perfil
+              </button>
+              <button className="ghost-button small-button profile-inline-logout" type="button" onClick={logout}>
+                Sair
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div className="side-card">
-          <div className="section-title">
-            <h2>Seus posts</h2>
-            <span>{feedItems.length}</span>
-          </div>
-          {feedItems.length ? (
-            <>
-              <div className="profile-media-grid">
-                {feedItems.map((item) => (
-                  <button
-                    key={item.id}
-                    className={item.id === selectedPost?.id ? 'profile-media-tile active' : 'profile-media-tile'}
-                    type="button"
-                    onClick={() => setSelectedPostId(item.id)}
-                  >
-                    <MediaAsset
-                      className="profile-media-thumb"
-                      src={item.fileUrl}
-                      alt={item.title}
-                      mediaType={item.mediaType}
-                      controls={false}
-                    />
-                  </button>
-                ))}
+        {showEdit ? (
+          <form className="profile-edit-sheet" onSubmit={handleSubmit}>
+            <label>
+              Nome
+              <input
+                value={form.displayName}
+                onChange={(event) => setForm((current) => ({ ...current, displayName: event.target.value }))}
+              />
+            </label>
+
+            <label>
+              Bio
+              <textarea
+                rows="3"
+                value={form.bio}
+                onChange={(event) => setForm((current) => ({ ...current, bio: event.target.value }))}
+              />
+            </label>
+
+            <div className="location-box">
+              <div>
+                <strong>Localizacao</strong>
+                <p>{formatLocation(form.location)}</p>
               </div>
-              {selectedPost ? (
-                <SocialPostCard
-                  item={selectedPost}
-                  token={token}
-                  currentUser={user}
-                  onUpdated={handlePostUpdated}
-                  onDeleted={handlePostDeleted}
-                />
-              ) : null}
-            </>
-          ) : (
-            <div className="side-card empty-state">
-              <p className="muted-text">Seus uploads de foto e video vao aparecer aqui quando voce postar em um pico.</p>
+              <button className="secondary-button" type="button" onClick={captureLocation}>
+                {capturingLocation ? 'Atualizando...' : 'Atualizar'}
+              </button>
             </div>
-          )}
-        </div>
+
+            <label>
+              Foto de perfil
+              <input type="file" accept="image/*" onChange={handleAvatarChange} />
+            </label>
+
+            <div>
+              <label>Esportes favoritos</label>
+              <SportPicker
+                sports={sports}
+                selectedIds={form.favoriteSportIds}
+                onToggle={(sportId) =>
+                  setForm((current) => ({
+                    ...current,
+                    favoriteSportIds: toggleId(current.favoriteSportIds, sportId),
+                  }))
+                }
+                helperText=""
+              />
+            </div>
+
+            {error ? <p className="error-text">{error}</p> : null}
+            {message ? <p className="success-text">{message}</p> : null}
+
+            <button className="primary-button full-width" disabled={saving || uploadingAvatar || !form.location}>
+              {saving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </form>
+        ) : null}
       </div>
 
-      <aside className="page-column rail-column">
-        <div className="side-card sticky-card">
-          {canModerate ? (
-            <>
-              <div className="section-title"><h2>Fila de moderacao</h2><span>{moderation.pendingPicos.length + moderation.pendingEvents.length}</span></div>
-              <div className="list-stack compact-list">
-                {moderation.pendingPicos.map((item) => (
-                  <article key={item.id} className="list-item static-item">
-                    <div><strong>{item.name}</strong><p>Pico aguardando aprovacao</p></div>
-                    <div className="post-card-actions">
-                      <Link className="secondary-button small-link-button" to={`/picos/${item.slug}`}>Abrir</Link>
-                      <button className="post-action-button active" type="button" disabled={moderating} onClick={() => handleModerationAction('pico', item.slug, 'approve')}>Aprovar</button>
-                      <button className="post-action-button" type="button" disabled={moderating} onClick={() => handleModerationAction('pico', item.slug, 'reject')}>Rejeitar</button>
-                    </div>
-                  </article>
-                ))}
-                {moderation.pendingEvents.map((item) => (
-                  <article key={item.id} className="list-item static-item">
-                    <div><strong>{item.title}</strong><p>Evento aguardando aprovacao</p></div>
-                    <div className="post-card-actions">
-                      <Link className="secondary-button small-link-button" to={`/eventos/${item.id}`}>Abrir</Link>
-                      <button className="post-action-button active" type="button" disabled={moderating} onClick={() => handleModerationAction('evento', item.id, 'approve')}>Aprovar</button>
-                      <button className="post-action-button" type="button" disabled={moderating} onClick={() => handleModerationAction('evento', item.id, 'reject')}>Rejeitar</button>
-                    </div>
-                  </article>
-                ))}
-                {!moderation.pendingPicos.length && !moderation.pendingEvents.length ? <p className="muted-text">Nada pendente na moderacao agora.</p> : null}
-              </div>
-              <div className="section-divider" />
-            </>
-          ) : null}
+      <div className="profile-tab-bar">
+        <button className={tab === 'posts' ? 'profile-tab active' : 'profile-tab'} type="button" onClick={() => setTab('posts')}>
+          Posts
+        </button>
+        <button className={tab === 'picos' ? 'profile-tab active' : 'profile-tab'} type="button" onClick={() => setTab('picos')}>
+          Picos
+        </button>
+        <button className={tab === 'visited' ? 'profile-tab active' : 'profile-tab'} type="button" onClick={() => setTab('visited')}>
+          Andei
+        </button>
+        <button className={tab === 'liked' ? 'profile-tab active' : 'profile-tab'} type="button" onClick={() => setTab('liked')}>
+          Curti
+        </button>
+      </div>
 
-          <div className="section-title"><h2>Pessoas no app</h2><span>{people.length}</span></div>
-          <div className="list-stack compact-list">
-            {people.length ? people.map((person) => (
-              <article key={person.id} className="list-item static-item follow-card">
-                <div className="user-chip">
-                  {person.avatarUrl ? <MediaAsset className="avatar-circle avatar-mini" src={person.avatarUrl} alt={person.displayName} /> : <div className="avatar-circle avatar-mini">{person.displayName.slice(0, 1).toUpperCase()}</div>}
-                  <div><strong>{person.displayName}</strong><p>{person.followerCount} seguidores - {person.mediaCount} posts</p></div>
+      {tab === 'posts' ? (
+        <div className="profile-posts-grid">
+          {currentItems.length ? (
+            currentItems.map((item) => (
+              <button key={item.id} className="profile-post-tile" type="button" onClick={() => setSelectedPost(item)}>
+                <MediaAsset
+                  className="profile-post-thumb"
+                  src={item.fileUrl}
+                  alt={item.title}
+                  mediaType={item.mediaType}
+                  controls={false}
+                />
+                {item.mediaType === 'video' ? <span className="profile-post-badge">video</span> : null}
+              </button>
+            ))
+          ) : (
+            <div className="dark-empty-state">Nenhuma publicacao ainda.</div>
+          )}
+        </div>
+      ) : (
+        <div className="profile-pico-list">
+          {currentItems.length ? (
+            currentItems.map((item) => (
+              <Link key={item.id} className="profile-pico-row" to={`/picos/${item.slug}`}>
+                <div>
+                  <strong>{item.name}</strong>
+                  <p>{item.sport?.name}</p>
                 </div>
-                <div className="follow-card-actions">
-                  <Link className="secondary-button small-link-button" to={`/pessoas/${person.id}`}>
-                    Perfil
-                  </Link>
-                  <button className={person.isFollowing ? 'secondary-button small-link-button' : 'primary-button small-link-button'} type="button" onClick={() => handleToggleFollow(person.id)}>{person.isFollowing ? 'Seguindo' : 'Seguir'}</button>
-                  {user.permissions?.includes('role.assign') ? <div className="role-toggle-grid">{roles.filter((role) => role.slug !== 'usuario').map((role) => { const hasRole = person.roles?.some((item) => item.slug === role.slug); return <button key={role.slug} className={hasRole ? 'post-action-button active' : 'post-action-button'} type="button" onClick={() => handleToggleRole(person.id, role.slug, hasRole)}>{role.name}</button> })}</div> : null}
-                </div>
-              </article>
-            )) : <p className="muted-text">Quando outros usuarios entrarem, eles aparecem aqui.</p>}
+                <span>{item.voteCount} curtidas</span>
+              </Link>
+            ))
+          ) : (
+            <div className="dark-empty-state">Nada nesta aba ainda.</div>
+          )}
+        </div>
+      )}
+
+      {canModerate && (moderation.picos?.length || moderation.events?.length) ? (
+        <div className="profile-moderation-panel">
+          <div className="section-title compact-section-title">
+            <h2>Moderacao</h2>
+            <span>{(moderation.picos?.length || 0) + (moderation.events?.length || 0)}</span>
           </div>
 
-          {error ? <p className="error-text">{error}</p> : null}
-          {message ? <p className="success-text">{message}</p> : null}
+          <div className="profile-pico-list">
+            {(moderation.picos || []).map((item) => (
+              <div key={item.id} className="profile-pico-row static-dark-row">
+                <div>
+                  <strong>{item.name}</strong>
+                  <p>Pico pendente</p>
+                </div>
+                <div className="inline-actions wrap-actions">
+                  <button className="secondary-button small-link-button" type="button" onClick={() => handleModerationAction('pico', item.slug, 'approve')}>
+                    Aprovar
+                  </button>
+                  <button className="ghost-button small-button" type="button" onClick={() => handleModerationAction('pico', item.slug, 'reject')}>
+                    Rejeitar
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {(moderation.events || []).map((item) => (
+              <div key={item.id} className="profile-pico-row static-dark-row">
+                <div>
+                  <strong>{item.title}</strong>
+                  <p>Evento pendente</p>
+                </div>
+                <div className="inline-actions wrap-actions">
+                  <button className="secondary-button small-link-button" type="button" onClick={() => handleModerationAction('event', item.id, 'approve')}>
+                    Aprovar
+                  </button>
+                  <button className="ghost-button small-button" type="button" onClick={() => handleModerationAction('event', item.id, 'reject')}>
+                    Rejeitar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-      </aside>
+      ) : null}
+
+      {error ? <p className="error-text">{error}</p> : null}
+      {message ? <p className="success-text">{message}</p> : null}
+
+      <PostDialog
+        item={selectedPost}
+        token={token}
+        currentUser={user}
+        onClose={() => setSelectedPost(null)}
+        onUpdated={handlePostUpdated}
+        onDeleted={handlePostDeleted}
+      />
     </section>
   )
 }

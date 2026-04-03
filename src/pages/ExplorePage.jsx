@@ -93,7 +93,7 @@ export default function ExplorePage() {
   const [pickedLocation, setPickedLocation] = useState(null)
   const [loadingLocation, setLoadingLocation] = useState(false)
   const [loadingPicos, setLoadingPicos] = useState(true)
-  const [statusMessage, setStatusMessage] = useState('Mapa livre')
+  const [statusMessage, setStatusMessage] = useState('')
   const [bounds, setBounds] = useState(null)
   const [viewportRequest, setViewportRequest] = useState({
     center: user?.location ? [user.location.latitude, user.location.longitude] : defaultCenter,
@@ -190,7 +190,7 @@ export default function ExplorePage() {
         <div className="toolbar-card compact-page-header">
           <div className="section-title compact-section-title">
             <div>
-              <p className="eyebrow">Explorar</p>
+              <p className="eyebrow">PicoMap</p>
               <h1>Mapa</h1>
             </div>
             <button className="secondary-button" onClick={focusExactLocation} disabled={loadingLocation}>
@@ -200,7 +200,7 @@ export default function ExplorePage() {
               Marcar novo pico
             </Link>
           </div>
-          <span className="toolbar-helper-text">{statusMessage}</span>
+          {statusMessage ? <span className="toolbar-helper-text">{statusMessage}</span> : null}
         </div>
 
         <div className="toolbar-card">
@@ -227,7 +227,7 @@ export default function ExplorePage() {
           <div className="map-card-header">
             <div>
               <strong>Mapa principal</strong>
-              <p>{loadingPicos ? 'Atualizando picos visiveis...' : 'Toque num ponto vazio para criar um pico ali.'}</p>
+              <p>{loadingPicos ? 'Atualizando...' : 'Toque para marcar um ponto.'}</p>
             </div>
             <span className="status-pill">{loadingPicos ? 'atualizando picos' : `${items.length} picos`}</span>
           </div>
@@ -248,7 +248,7 @@ export default function ExplorePage() {
                 viewportRequest={viewportRequest}
                 onBoundsChange={setBounds}
                 onManualMove={() =>
-                  setStatusMessage('Mapa livre')
+                  setStatusMessage('')
                 }
                 onMapPick={(location) => {
                   setPickedLocation(location)

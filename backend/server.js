@@ -97,7 +97,7 @@ app.get('/api/health', async (_, response) => {
     await repository.healthCheck()
     response.json({
       ok: true,
-      appName: process.env.APP_NAME || 'PicoLiga',
+      appName: process.env.APP_NAME || 'PicoMap',
       database: 'ok',
       storage: 'cloudinary',
     })
@@ -215,6 +215,7 @@ app.get('/api/feed', async (request, response) => {
       {
         authorId,
         limit: request.query.limit,
+        cursor: request.query.cursor,
         offset: request.query.offset,
       },
       currentUser?.id,
@@ -562,21 +563,23 @@ app.delete('/api/users/:userId/roles/:roleSlug', requireAuth, async (request, re
 })
 
 app.get('/api/dms', requireAuth, async (request, response) => {
+  const conversations = await repository.listDirectConversations(request.currentUser.id)
   response.json({
-    following: await repository.listFollowingPeople(request.currentUser.id),
-    conversations: await repository.listDirectConversations(request.currentUser.id),
+    mutuals: await repository.listMutualPeople(request.currentUser.id),
+    groups: conversations.filter((item) => item.isGroup),
+    conversations,
   })
 })
 
 app.post('/api/dms', requireAuth, async (request, response) => {
   try {
-    if (!request.body.recipientUserId) {
-      throw new Error('Escolha um perfil para abrir a conversa.')
+    if (!request.body.recipientUserId && !request.body.participantUserIds?.length) {
+      throw new Error('Escolha pessoas para abrir a conversa.')
     }
     response.status(201).json({
       conversation: await repository.openDirectConversation(
         request.currentUser.id,
-        request.body.recipientUserId,
+        request.body,
       ),
     })
   } catch (error) {
@@ -617,7 +620,7 @@ app.post('/api/dms/:conversationId/messages', requireAuth, async (request, respo
       conversation: await repository.sendDirectMessage(
         request.currentUser.id,
         request.params.conversationId,
-        request.body.text,
+        request.body,
       ),
     })
   } catch (error) {
@@ -625,6 +628,20 @@ app.post('/api/dms/:conversationId/messages', requireAuth, async (request, respo
   }
 })
 
-app.listen(port, () => {
-  console.log(`PicoLiga API rodando em http://127.0.0.1:${port}`)
+app.post('/api/dms/:conversationId/messages/:messageId/reactions', requireAuth, async (request, response) => {
+  try {
+    response.status(201).json({
+      conversation: await repository.toggleDirectMessageReaction(
+        request.currentUser.id,
+        request.params.conversationId,
+        request.params.messageId,
+      ),
+    })
+  } catch (error) {
+    response.status(400).json({ error: error.message })
+  }
+})
+
+app.listen(port, '0.0.0.0', () => {
+  console.log(`PicoMap API rodando em http://0.0.0.0:${port}`)
 })
