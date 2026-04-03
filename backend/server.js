@@ -166,7 +166,11 @@ app.post('/api/uploads/:kind', requireAuth, async (request, response) => {
       size: file.size,
     })
   } catch (error) {
-    response.status(400).json({ error: error.message })
+    const nextMessage = /Invalid Signature/i.test(error.message)
+      ? 'Falha na configuracao do Cloudinary no servidor. Atualize CLOUDINARY_API_SECRET no Render.'
+      : error.message
+
+    response.status(400).json({ error: nextMessage })
   }
 })
 

@@ -88,6 +88,8 @@ export default function ChatsPage() {
     if (!token || !selectedConversationId) return undefined
 
     const interval = window.setInterval(async () => {
+      if (document.hidden) return
+
       try {
         const [inboxPayload, detailPayload] = await Promise.all([
           apiRequest('/api/dms', { token }),
@@ -99,7 +101,7 @@ export default function ChatsPage() {
         setConversations(inboxPayload.conversations || [])
         setSelectedConversation(detailPayload.conversation)
       } catch {}
-    }, 3500)
+    }, 10000)
 
     return () => window.clearInterval(interval)
   }, [selectedConversationId, token])

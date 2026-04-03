@@ -98,10 +98,20 @@ export async function uploadSelectedFile(file, { token, kind }) {
       ? await optimizeImageFile(file)
       : file
 
-  const payload = await uploadFile(`/api/uploads/${normalizedKind}`, {
-    file: uploadableFile,
-    token,
-  })
+  try {
+    const payload = await uploadFile(`/api/uploads/${normalizedKind}`, {
+      file: uploadableFile,
+      token,
+    })
 
-  return payload.url
+    return payload.url
+  } catch (error) {
+    if (/Invalid Signature/i.test(error.message)) {
+      throw new Error(
+        'Upload indisponivel no servidor agora. Revise CLOUDINARY_API_SECRET no Render.',
+      )
+    }
+
+    throw error
+  }
 }

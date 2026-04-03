@@ -51,13 +51,17 @@ export default function AppLayout() {
     loadNotifications()
 
     if (token) {
-      intervalId = window.setInterval(loadNotifications, 12000)
+      intervalId = window.setInterval(() => {
+        if (!document.hidden) {
+          loadNotifications()
+        }
+      }, 30000)
     }
 
     return () => {
       if (intervalId) window.clearInterval(intervalId)
     }
-  }, [token, location.pathname])
+  }, [token])
 
   useEffect(() => {
     function handleNotificationsUpdated(event) {
