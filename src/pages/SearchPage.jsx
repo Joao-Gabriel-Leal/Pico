@@ -7,7 +7,7 @@ import { getDisplayName, getInitial } from '../utils/text'
 
 export default function SearchPage() {
   const navigate = useNavigate()
-  const { user, token, refreshUser } = useAuth()
+  const { user, token } = useAuth()
   const [searchText, setSearchText] = useState('')
   const [people, setPeople] = useState([])
   const [loading, setLoading] = useState(true)
@@ -50,12 +50,20 @@ export default function SearchPage() {
     setError('')
 
     try {
-      await apiRequest(`/api/people/${targetUserId}/follow`, {
+      const payload = await apiRequest(`/api/people/${targetUserId}/follow`, {
         method: 'POST',
         token,
       })
-      await refreshUser()
-      await loadPeople()
+      setPeople((current) =>
+        current.map((person) =>
+          person.id === targetUserId
+            ? {
+                ...person,
+                ...payload.item,
+              }
+            : person,
+        ),
+      )
     } catch (nextError) {
       setError(nextError.message)
     } finally {

@@ -37,12 +37,13 @@ export default function AuthPage() {
 
   useEffect(() => {
     async function loadOptions() {
+      if (mode !== 'register' || sports.length) return
       const payload = await apiRequest('/api/auth/options')
       setSports(payload.sports)
     }
 
     loadOptions()
-  }, [])
+  }, [mode, sports.length])
 
   async function captureLocation() {
     setCapturingLocation(true)

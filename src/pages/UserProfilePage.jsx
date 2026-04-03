@@ -19,7 +19,6 @@ export default function UserProfilePage() {
   async function loadPage() {
     const payload = await apiRequest(`/api/people/${userId}`, { token })
     setDetail(payload)
-    setSelectedPost((current) => current || payload.posts?.[0] || null)
   }
 
   useEffect(() => {
@@ -41,9 +40,18 @@ export default function UserProfilePage() {
     setError('')
 
     try {
-      await apiRequest(`/api/people/${detail.person.id}/follow`, { method: 'POST', token })
-      await refreshUser()
-      await loadPage()
+      const payload = await apiRequest(`/api/people/${detail.person.id}/follow`, { method: 'POST', token })
+      setDetail((current) =>
+        current
+          ? {
+              ...current,
+              person: {
+                ...current.person,
+                ...payload.item,
+              },
+            }
+          : current,
+      )
     } catch (nextError) {
       setError(nextError.message)
     } finally {

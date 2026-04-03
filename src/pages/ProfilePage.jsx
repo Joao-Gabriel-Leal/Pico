@@ -53,7 +53,6 @@ export default function ProfilePage() {
     setSports(optionsPayload.sports || [])
     setDetail(profilePayload)
     setModeration(moderationPayload || { picos: [], events: [] })
-    setSelectedPost((current) => current || profilePayload.posts?.[0] || null)
   }
 
   useEffect(() => {
