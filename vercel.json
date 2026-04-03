@@ -1,8 +1,18 @@
 {
   "rewrites": [
-    {
-      "source": "/(entrar|explorar|mapa|eventos|eventos/(.*)|pesquisa|conversas|feed|videos|atividade|picos/(.*)|perfil|pessoas/(.*)|novo-pico)",
-      "destination": "/index.html"
-    }
+    { "source": "/entrar", "destination": "/index.html" },
+    { "source": "/explorar", "destination": "/index.html" },
+    { "source": "/mapa", "destination": "/index.html" },
+    { "source": "/eventos", "destination": "/index.html" },
+    { "source": "/eventos/:path*", "destination": "/index.html" },
+    { "source": "/pesquisa", "destination": "/index.html" },
+    { "source": "/conversas", "destination": "/index.html" },
+    { "source": "/feed", "destination": "/index.html" },
+    { "source": "/videos", "destination": "/index.html" },
+    { "source": "/atividade", "destination": "/index.html" },
+    { "source": "/picos/:path*", "destination": "/index.html" },
+    { "source": "/perfil", "destination": "/index.html" },
+    { "source": "/pessoas/:path*", "destination": "/index.html" },
+    { "source": "/novo-pico", "destination": "/index.html" }
   ]
 }
