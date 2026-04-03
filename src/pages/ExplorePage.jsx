@@ -18,7 +18,7 @@ import { distanceBetween, getCurrentPosition } from '../utils/geo'
 const defaultCenter = [-23.55052, -46.633308]
 const markerPalette = ['orange', 'blue', 'green', 'gold', 'violet', 'red']
 
-function MapViewportController({ viewportRequest, onBoundsChange, onManualMove }) {
+function MapViewportController({ viewportRequest, onBoundsChange, onManualMove, onMapPick }) {
   const map = useMap()
 
   useEffect(() => {
@@ -37,6 +37,12 @@ function MapViewportController({ viewportRequest, onBoundsChange, onManualMove }
   }, [map, viewportRequest])
 
   useMapEvents({
+    click(event) {
+      onMapPick({
+        latitude: event.latlng.lat,
+        longitude: event.latlng.lng,
+      })
+    },
     dragstart: onManualMove,
     zoomstart: onManualMove,
     moveend() {
@@ -64,9 +70,16 @@ function makeMarker(color) {
 
 const userIcon = L.divIcon({
   className: '',
-  html: '<div class="map-user-pill"><span>Voce</span></div>',
-  iconSize: [56, 28],
-  iconAnchor: [28, 34],
+  html: '<div class="map-user-pill"><span>Voce esta aqui</span></div>',
+  iconSize: [116, 34],
+  iconAnchor: [58, 42],
+})
+
+const createSpotIcon = L.divIcon({
+  className: '',
+  html: '<div class="map-create-pin">+</div>',
+  iconSize: [28, 28],
+  iconAnchor: [14, 28],
 })
 
 export default function ExplorePage() {
@@ -77,6 +90,7 @@ export default function ExplorePage() {
   const [activeSport, setActiveSport] = useState('all')
   const [selectedSlug, setSelectedSlug] = useState('')
   const [userPosition, setUserPosition] = useState(user?.location || null)
+  const [pickedLocation, setPickedLocation] = useState(null)
   const [loadingLocation, setLoadingLocation] = useState(false)
   const [loadingPicos, setLoadingPicos] = useState(true)
   const [statusMessage, setStatusMessage] = useState(
@@ -180,8 +194,8 @@ export default function ExplorePage() {
             <p className="eyebrow">Explorar picos</p>
             <h1>Mapa livre no mobile, leve no desktop e focado no que esta perto.</h1>
             <p className="hero-copy">
-              O mapa nao volta mais sozinho para sua posicao. Voce move livremente e so recentraliza
-              quando quiser.
+              O mapa nao volta mais sozinho para sua posicao. Voce move livremente, toca num ponto
+              vazio para sugerir um pico e so recentraliza quando quiser.
             </p>
           </div>
 
@@ -240,8 +254,12 @@ export default function ExplorePage() {
                 viewportRequest={viewportRequest}
                 onBoundsChange={setBounds}
                 onManualMove={() =>
-                  setStatusMessage('Mapa livre. Toque em "Centralizar" se quiser voltar para sua localizacao.')
+                  setStatusMessage('Mapa livre. Toque num ponto vazio para sugerir um pico ou em "Centralizar" para voltar para voce.')
                 }
+                onMapPick={(location) => {
+                  setPickedLocation(location)
+                  setStatusMessage('Ponto selecionado. Agora voce pode criar um pico exatamente aqui.')
+                }}
               />
 
               {userPosition ? (
@@ -259,6 +277,25 @@ export default function ExplorePage() {
                     zIndexOffset={100}
                   />
                 </>
+              ) : null}
+
+              {pickedLocation ? (
+                <Marker
+                  position={[pickedLocation.latitude, pickedLocation.longitude]}
+                  icon={createSpotIcon}
+                  zIndexOffset={900}
+                >
+                  <Popup>
+                    <strong>Criar pico aqui</strong>
+                    <br />
+                    <Link
+                      className="text-link"
+                      to={`/novo-pico?lat=${pickedLocation.latitude}&lng=${pickedLocation.longitude}`}
+                    >
+                      Abrir criacao neste ponto
+                    </Link>
+                  </Popup>
+                </Marker>
               ) : null}
 
               {itemsWithDistance.map((item, index) => (
@@ -289,6 +326,30 @@ export default function ExplorePage() {
             </button>
           </div>
         </div>
+
+        {pickedLocation ? (
+          <div className="side-card spot-sheet">
+            <div className="section-title">
+              <h2>Criar pico neste ponto</h2>
+              <span>mapa</span>
+            </div>
+            <p className="muted-text">
+              Esse ponto foi marcado direto no mapa. Voce segue para a criacao com a localizacao ja
+              preenchida, sem precisar mexer em dado tecnico.
+            </p>
+            <div className="inline-actions wrap-actions">
+              <Link
+                className="primary-button small-link-button"
+                to={`/novo-pico?lat=${pickedLocation.latitude}&lng=${pickedLocation.longitude}`}
+              >
+                Criar pico aqui
+              </Link>
+              <button className="secondary-button small-link-button" type="button" onClick={() => setPickedLocation(null)}>
+                Limpar ponto
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <aside className="page-column rail-column">
@@ -300,7 +361,12 @@ export default function ExplorePage() {
 
           {selectedPico ? (
             <article className="mini-card pico-preview-card">
-              <MediaAsset className="cover-thumb small-cover-thumb" src={selectedPico.previewPhoto || selectedPico.coverImageUrl} alt={selectedPico.name} />
+              <MediaAsset
+                className="cover-thumb small-cover-thumb"
+                src={selectedPico.previewPhoto || selectedPico.coverImageUrl}
+                alt={selectedPico.name}
+                expandable
+              />
               <div className="mini-card-body">
                 <strong>{selectedPico.name}</strong>
                 <p>{selectedPico.description}</p>

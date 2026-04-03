@@ -182,6 +182,7 @@ function mapMediaRow(row) {
     id: row.id,
     picoId: row.pico_id,
     userId: row.user_id,
+    mediaScope: row.media_scope || 'feed',
     mediaType: row.media_type,
     title: row.title,
     fileUrl: row.file_url,
@@ -415,6 +416,7 @@ async function getUserViewById(client, userId, currentUserId = userId) {
         select count(*)::int as total
         from pico_media
         where user_id = app_user.id
+          and media_scope = 'feed'
       ) media on true
       left join lateral (
         select count(*)::int as total
@@ -492,6 +494,7 @@ async function getPicoSummaryRowById(client, picoId, currentUserId = null) {
         sport.name as sport_name,
         coalesce(votes.total, 0)::int as vote_count,
         coalesce(media.total, 0)::int as media_count,
+        coalesce(gallery.total, 0)::int as gallery_count,
         coalesce(events.total, 0)::int as upcoming_events_count,
         exists(
           select 1
@@ -516,7 +519,14 @@ async function getPicoSummaryRowById(client, picoId, currentUserId = null) {
         select count(*)::int as total
         from pico_media
         where pico_media.pico_id = pico.id
+          and pico_media.media_scope = 'feed'
       ) media on true
+      left join lateral (
+        select count(*)::int as total
+        from pico_media
+        where pico_media.pico_id = pico.id
+          and pico_media.media_scope = 'gallery'
+      ) gallery on true
       left join lateral (
         select count(*)::int as total
         from pico_event
@@ -526,6 +536,7 @@ async function getPicoSummaryRowById(client, picoId, currentUserId = null) {
         select file_url
         from pico_media
         where pico_id = pico.id
+          and media_scope = 'gallery'
           and media_type = 'photo'
           and file_url <> ''
         order by created_at desc
@@ -570,6 +581,7 @@ async function buildPicoSummary(client, picoId, currentUserId = null) {
     sport,
     creator,
     mediaCount: Number(row.media_count || 0),
+    galleryCount: Number(row.gallery_count || 0),
     upcomingEventsCount: Number(row.upcoming_events_count || 0),
     voteCount: Number(row.vote_count || 0),
     hasVoted: Boolean(row.has_voted),
@@ -795,6 +807,7 @@ async function getMediaRowById(client, mediaId) {
         id,
         pico_id,
         user_id,
+        media_scope,
         media_type,
         title,
         file_url,
@@ -896,6 +909,7 @@ async function listPicoMedia(client, picoId) {
         id,
         pico_id,
         user_id,
+        media_scope,
         media_type,
         title,
         file_url,
@@ -981,6 +995,8 @@ async function buildPicoDetail(client, picoId, currentUserId = null) {
   const media = (
     await Promise.all(mediaRows.map((row) => buildMediaDetail(client, row, currentUserId)))
   ).filter(Boolean)
+  const galleryMedia = media.filter((item) => item.mediaScope === 'gallery')
+  const feedPosts = media.filter((item) => item.mediaScope === 'feed')
 
   const events = eventRows.filter((item) => {
     if (item.approvalStatus === 'approved') return true
@@ -989,14 +1005,16 @@ async function buildPicoDetail(client, picoId, currentUserId = null) {
     return permissions.canManageEvents || permissions.canApproveEvents
   })
 
-  const topVideos = [...media]
+  const topVideos = [...feedPosts]
     .filter((item) => item.mediaType === 'video')
     .sort((left, right) => right.likesCount - left.likesCount || right.viewsCount - left.viewsCount)
     .slice(0, 5)
 
   return {
     ...summary,
-    media,
+    media: feedPosts,
+    galleryMedia,
+    feedPosts,
     events,
     campaigns,
     admins,
@@ -1421,7 +1439,7 @@ export async function createRepository() {
 
     async listFeed(filters = {}, currentUserId = null) {
       const params = []
-      let whereClause = "where file_url <> ''"
+      let whereClause = "where file_url <> '' and media_scope = 'feed'"
       const limit = Math.min(Math.max(Number(filters.limit) || 10, 1), 20)
       const offset = Math.max(Number(filters.offset) || 0, 0)
 
@@ -1438,6 +1456,7 @@ export async function createRepository() {
             id,
             pico_id,
             user_id,
+            media_scope,
             media_type,
             title,
             file_url,
@@ -2491,9 +2510,21 @@ export async function createRepository() {
           throw new Error('Pico nao encontrado.')
         }
 
-        const permissionKeys = await getUserPermissionKeys(client, userId)
-        if (!hasPermission(permissionKeys, 'feed.post')) {
-          throw new Error('Seu perfil nao pode publicar no feed.')
+        const mediaScope = payload.scope === 'gallery' ? 'gallery' : 'feed'
+
+        if (mediaScope === 'gallery') {
+          await ensurePicoPermission(
+            client,
+            picoId,
+            userId,
+            'canEdit',
+            'Voce nao pode atualizar a galeria desse pico.',
+          )
+        } else {
+          const permissionKeys = await getUserPermissionKeys(client, userId)
+          if (!hasPermission(permissionKeys, 'feed.post')) {
+            throw new Error('Seu perfil nao pode publicar no feed.')
+          }
         }
 
         await client.query(
@@ -2501,6 +2532,7 @@ export async function createRepository() {
             insert into pico_media (
               pico_id,
               user_id,
+              media_scope,
               media_type,
               title,
               file_url,
@@ -2508,11 +2540,12 @@ export async function createRepository() {
               comments_count,
               views_count
             )
-            values ($1, $2, $3, $4, $5, 0, 0, 0)
+            values ($1, $2, $3, $4, $5, $6, 0, 0, 0)
           `,
           [
             picoId,
             userId,
+            mediaScope,
             payload.mediaType === 'video' ? 'video' : 'photo',
             normalizeString(payload.title),
             fileUrl,
@@ -2759,6 +2792,6 @@ export function validatePicoPayload(payload) {
   }
 
   if (safeNumber(payload.latitude) === null || safeNumber(payload.longitude) === null) {
-    throw new Error('Use sua localizacao exata ou informe latitude e longitude validas.')
+    throw new Error('Escolha o ponto do pico no mapa ou use sua localizacao exata.')
   }
 }

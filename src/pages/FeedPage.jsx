@@ -142,6 +142,7 @@ export default function FeedPage() {
         method: 'POST',
         token,
         body: {
+          scope: 'feed',
           mediaType: form.mediaType,
           title: form.title,
           fileUrl: form.fileUrl,

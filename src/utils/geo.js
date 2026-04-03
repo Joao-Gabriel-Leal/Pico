@@ -26,10 +26,8 @@ export function getCurrentPosition() {
 
 export function formatLocation(location) {
   if (!location) return 'Localizacao ainda nao capturada'
-  const latitude = Number(location.latitude).toFixed(5)
-  const longitude = Number(location.longitude).toFixed(5)
-  const accuracy = location.accuracy ? ` · precisao ${Math.round(location.accuracy)}m` : ''
-  return `${latitude}, ${longitude}${accuracy}`
+  const accuracy = location.accuracy ? `Precisao de ${Math.round(location.accuracy)} m` : 'Localizacao confirmada'
+  return `${accuracy} atualizada`
 }
 
 export function distanceBetween(origin, target) {

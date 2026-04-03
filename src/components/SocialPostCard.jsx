@@ -287,6 +287,7 @@ export default function SocialPostCard({
         mediaType={localItem.mediaType}
         autoPlayInView={localItem.mediaType === 'video' && autoPlayVideo}
         controls={localItem.mediaType !== 'video' || !autoPlayVideo}
+        expandable
       />
 
       <div className="post-card-body">

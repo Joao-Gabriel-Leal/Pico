@@ -471,6 +471,20 @@ label {
   border-radius: 2px;
 }
 
+.map-create-pin {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 900;
+  border: 3px solid #fff;
+  box-shadow: 0 12px 24px rgba(255, 90, 42, 0.26);
+}
+
 .map-marker,
 .map-user-marker {
   border-radius: 999px;
@@ -623,7 +637,8 @@ label {
 .image-preview,
 .cover-thumb,
 .hero-image,
-.gallery-image {
+.gallery-image,
+.gallery-video {
   width: 100%;
   border-radius: 20px;
   object-fit: cover;
@@ -680,6 +695,51 @@ label {
 
 .gallery-image {
   height: 150px;
+}
+
+.gallery-video {
+  height: 180px;
+}
+
+.media-expand-button {
+  width: 100%;
+  padding: 0;
+  background: transparent;
+}
+
+.media-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(17, 17, 17, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+.media-lightbox-stage {
+  width: min(100%, 960px);
+  max-height: min(90vh, 960px);
+}
+
+.media-lightbox-asset {
+  width: 100%;
+  max-height: 84vh;
+  object-fit: contain;
+  border-radius: 24px;
+  background: #111;
+}
+
+.media-lightbox-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text-strong);
+  font-weight: 700;
 }
 
 .post-card-media {
@@ -775,6 +835,69 @@ label {
 .profile-hero {
   display: grid;
   gap: 20px;
+}
+
+.instagram-profile-card {
+  gap: 18px;
+}
+
+.instagram-profile-top,
+.instagram-profile-main,
+.instagram-profile-body {
+  display: grid;
+  gap: 18px;
+}
+
+.instagram-avatar {
+  width: 112px;
+  height: 112px;
+  border-radius: 999px;
+  object-fit: cover;
+}
+
+.instagram-profile-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.instagram-profile-counts article {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+}
+
+.profile-media-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.profile-media-tile {
+  padding: 0;
+  border-radius: 20px;
+  overflow: hidden;
+  background: transparent;
+  border: 2px solid transparent;
+}
+
+.profile-media-tile.active {
+  border-color: rgba(255, 90, 42, 0.3);
+}
+
+.profile-media-thumb {
+  width: 100%;
+  height: 124px;
+  object-fit: cover;
+  border: 0;
+  border-radius: 18px;
+}
+
+.profile-logout-button {
+  width: auto;
 }
 
 .profile-hero-media {
@@ -1281,6 +1404,11 @@ label {
     align-items: center;
   }
 
+  .instagram-profile-main {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
   .dm-layout {
     grid-template-columns: minmax(320px, 0.78fr) minmax(0, 1.22fr);
   }
@@ -1345,6 +1473,11 @@ label {
   }
 
   .profile-counts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .instagram-profile-counts,
+  .profile-media-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }

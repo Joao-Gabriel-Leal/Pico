@@ -1,12 +1,18 @@
-import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { apiRequest } from '../api'
 import { useAuth } from '../auth'
 import { uploadSelectedFile } from '../utils/files'
 import { formatLocation, getCurrentPosition } from '../utils/geo'
 
+function formatMapPoint(latitude, longitude) {
+  if (!latitude || !longitude) return 'Nenhum ponto definido ainda'
+  return `Ponto marcado no mapa e pronto para criar o pico`
+}
+
 export default function NewPicoPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { token, user } = useAuth()
   const [sports, setSports] = useState([])
   const [loadingLocation, setLoadingLocation] = useState(false)
@@ -37,6 +43,18 @@ export default function NewPicoPage() {
   }, [])
 
   useEffect(() => {
+    const lat = Number(searchParams.get('lat'))
+    const lng = Number(searchParams.get('lng'))
+
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      setForm((current) => ({
+        ...current,
+        latitude: lat.toFixed(6),
+        longitude: lng.toFixed(6),
+      }))
+      return
+    }
+
     if (!user?.location) return
 
     setForm((current) => ({
@@ -44,7 +62,12 @@ export default function NewPicoPage() {
       latitude: current.latitude || Number(user.location.latitude).toFixed(6),
       longitude: current.longitude || Number(user.location.longitude).toFixed(6),
     }))
-  }, [user])
+  }, [searchParams, user])
+
+  const locationPreview = useMemo(() => {
+    if (!form.latitude || !form.longitude) return 'Escolha um ponto no mapa ou use sua localizacao exata.'
+    return formatMapPoint(form.latitude, form.longitude)
+  }, [form.latitude, form.longitude])
 
   async function useCurrentLocation() {
     setLoadingLocation(true)
@@ -135,7 +158,10 @@ export default function NewPicoPage() {
         await apiRequest(`/api/picos/${payload.item.slug}/media`, {
           method: 'POST',
           token,
-          body: mediaItem,
+          body: {
+            ...mediaItem,
+            scope: 'gallery',
+          },
         })
       }
 
@@ -158,7 +184,7 @@ export default function NewPicoPage() {
         <div className="side-card">
           <h1>Entre para marcar um pico</h1>
           <p className="muted-text">
-            A criacao agora usa localizacao exata do aparelho e foto do pico direto no navegador.
+            A criacao agora usa localizacao exata do aparelho ou um ponto escolhido no mapa.
           </p>
           <Link className="primary-button small-link-button" to="/entrar">
             Entrar para criar pico
@@ -186,23 +212,23 @@ export default function NewPicoPage() {
 
   return (
     <section className="simple-page">
-        <div className="side-card">
-          <div className="section-title">
-            <div>
-              <p className="eyebrow">Novo pico</p>
-              <h1>Marque um lugar de verdade no mapa</h1>
+      <div className="side-card">
+        <div className="section-title">
+          <div>
+            <p className="eyebrow">Novo pico</p>
+            <h1>Marque um pico sem expor dado tecnico na tela</h1>
           </div>
           <button className="secondary-button" onClick={useCurrentLocation} type="button">
             {loadingLocation ? 'Lendo localizacao...' : 'Usar minha localizacao exata'}
           </button>
-          </div>
+        </div>
 
-          <p className="muted-text">
-            Pessoas comuns podem sugerir novos picos com varias fotos e videos. O pico entra em
-            aprovacao quando precisar de revisao antes de ficar visivel para todo mundo.
-          </p>
+        <p className="muted-text">
+          As fotos e videos desta tela sao so de apresentacao do pico. O feed publico recebe
+          apenas as publicacoes que a galera postar depois no pico.
+        </p>
 
-          <form className="form-card" onSubmit={handleSubmit}>
+        <form className="form-card" onSubmit={handleSubmit}>
           <label>
             Nome do pico
             <input
@@ -241,34 +267,13 @@ export default function NewPicoPage() {
 
           <div className="location-box">
             <div>
-              <strong>Coordenadas do pico</strong>
-              <p>
-                {form.latitude && form.longitude
-                  ? formatLocation({ latitude: form.latitude, longitude: form.longitude })
-                  : 'Use sua localizacao exata ou preencha manualmente abaixo'}
-              </p>
+              <strong>Ponto do pico</strong>
+              <p>{locationPreview}</p>
+              <p>{user.location ? formatLocation(user.location) : 'Seu perfil ainda nao capturou localizacao.'}</p>
             </div>
-          </div>
-
-          <div className="two-column-grid">
-            <label>
-              Latitude
-              <input
-                value={form.latitude}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, latitude: event.target.value }))
-                }
-              />
-            </label>
-            <label>
-              Longitude
-              <input
-                value={form.longitude}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, longitude: event.target.value }))
-                }
-              />
-            </label>
+            <Link className="secondary-button small-link-button" to="/mapa">
+              Escolher no mapa
+            </Link>
           </div>
 
           <div className="two-column-grid">
@@ -305,7 +310,7 @@ export default function NewPicoPage() {
           ) : null}
 
           <label>
-            Fotos e videos detalhados do pico
+            Fotos e videos de apresentacao
             <input type="file" accept="image/*,video/*" multiple onChange={handleGalleryFilesChange} />
           </label>
 
@@ -315,7 +320,7 @@ export default function NewPicoPage() {
                 <div key={`${item.fileUrl}-${index}`} className="list-item static-item">
                   <div>
                     <strong>{item.title}</strong>
-                    <p>{item.mediaType === 'video' ? 'Video' : 'Foto'}</p>
+                    <p>{item.mediaType === 'video' ? 'Video de apresentacao' : 'Foto de apresentacao'}</p>
                   </div>
                   <button
                     className="ghost-button small-button"

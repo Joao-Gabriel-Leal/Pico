@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiRequest } from '../api'
 import { useAuth } from '../auth'
@@ -35,10 +35,16 @@ export default function EventsPage() {
     prizePoolCents: 0,
   })
   const [showComposer, setShowComposer] = useState(searchParams.get('compose') === '1')
+  const composerRef = useRef(null)
 
   useEffect(() => {
     setShowComposer(searchParams.get('compose') === '1')
   }, [searchParams])
+
+  useEffect(() => {
+    if (!showComposer || !composerRef.current) return
+    composerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [showComposer])
 
   async function loadPage() {
     setLoading(true)
@@ -86,12 +92,16 @@ export default function EventsPage() {
     setMessage('')
 
     try {
-      await apiRequest(`/api/picos/${form.picoSlug}/events`, {
+      const payload = await apiRequest(`/api/picos/${form.picoSlug}/events`, {
         method: 'POST',
         token,
         body: form,
       })
-      setMessage(user?.permissions?.includes('event.approve') ? 'Evento publicado com sucesso.' : 'Evento enviado para aprovacao.')
+      setMessage(
+        payload.item?.approvalStatus === 'approved'
+          ? 'Evento publicado com sucesso.'
+          : 'Evento enviado para aprovacao.',
+      )
       setForm((current) => ({
         ...current,
         title: '',
@@ -140,10 +150,11 @@ export default function EventsPage() {
             <button
               className="primary-button small-link-button"
               onClick={() => {
-                setShowComposer((current) => !current)
+                const nextVisible = !showComposer
+                setShowComposer(nextVisible)
                 setSearchParams((current) => {
                   const next = new URLSearchParams(current)
-                  if (showComposer) next.delete('compose')
+                  if (!nextVisible) next.delete('compose')
                   else next.set('compose', '1')
                   return next
                 })
@@ -176,7 +187,7 @@ export default function EventsPage() {
         </div>
 
         {showComposer ? (
-          <div className="side-card compose-card">
+          <div className="side-card compose-card" ref={composerRef}>
             <div className="section-title">
               <h2>{user?.permissions?.includes('event.approve') ? 'Criar evento' : 'Sugerir evento'}</h2>
               <span>topo da agenda</span>
@@ -184,6 +195,11 @@ export default function EventsPage() {
 
             {user ? (
               <form className="form-card compact-form" onSubmit={handleCreateEvent}>
+                {!picos.length ? (
+                  <p className="muted-text">
+                    Primeiro aprove ou crie um pico para conseguir abrir um evento aqui.
+                  </p>
+                ) : null}
                 <label>
                   Pico
                   <select value={form.picoSlug} onChange={(event) => handlePicoChange(event.target.value)}>

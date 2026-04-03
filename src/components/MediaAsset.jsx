@@ -9,8 +9,10 @@ export default function MediaAsset({
   autoPlayInView = false,
   muted = autoPlayInView,
   loop = autoPlayInView,
+  expandable = false,
 }) {
   const [failed, setFailed] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const placeholderText = className.includes('avatar') ? '' : 'Sem midia'
   const videoRef = useRef(null)
 
@@ -42,8 +44,8 @@ export default function MediaAsset({
     return <div className={`${className} placeholder-cover`.trim()}>{placeholderText}</div>
   }
 
-  if (mediaType === 'video') {
-    return (
+  const asset =
+    mediaType === 'video' ? (
       <video
         ref={videoRef}
         className={className}
@@ -56,8 +58,44 @@ export default function MediaAsset({
         preload="metadata"
         onError={() => setFailed(true)}
       />
+    ) : (
+      <img className={className} src={src} alt={alt} onError={() => setFailed(true)} />
     )
-  }
 
-  return <img className={className} src={src} alt={alt} onError={() => setFailed(true)} />
+  return (
+    <>
+      {expandable ? (
+        <button
+          className="media-expand-button"
+          type="button"
+          onClick={() => setExpanded(true)}
+          aria-label="Expandir midia"
+        >
+          {asset}
+        </button>
+      ) : (
+        asset
+      )}
+
+      {expandable && expanded ? (
+        <div className="media-lightbox" role="dialog" aria-modal="true" onClick={() => setExpanded(false)}>
+          <button
+            className="media-lightbox-close"
+            type="button"
+            onClick={() => setExpanded(false)}
+            aria-label="Fechar midia"
+          >
+            Fechar
+          </button>
+          <div className="media-lightbox-stage" onClick={(event) => event.stopPropagation()}>
+            {mediaType === 'video' ? (
+              <video className="media-lightbox-asset" src={src} controls autoPlay playsInline />
+            ) : (
+              <img className="media-lightbox-asset" src={src} alt={alt} />
+            )}
+          </div>
+        </div>
+      ) : null}
+    </>
+  )
 }

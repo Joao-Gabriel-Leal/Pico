@@ -110,6 +110,7 @@ create table if not exists pico_media (
   id uuid primary key default gen_random_uuid(),
   pico_id uuid not null references pico(id) on delete cascade,
   user_id uuid not null references app_user(id) on delete cascade,
+  media_scope text not null default 'feed' check (media_scope in ('feed', 'gallery')),
   media_type text not null check (media_type in ('photo', 'video')),
   title text not null,
   file_url text not null,
@@ -198,6 +199,7 @@ alter table pico add column if not exists approval_status text not null default 
 alter table pico add column if not exists approved_by uuid references app_user(id) on delete set null;
 alter table pico add column if not exists approved_at timestamptz;
 alter table pico_media add column if not exists comments_count integer not null default 0;
+alter table pico_media add column if not exists media_scope text not null default 'feed';
 alter table pico_media add column if not exists updated_at timestamptz not null default now();
 alter table pico_event add column if not exists updated_at timestamptz not null default now();
 alter table pico_event add column if not exists approval_status text not null default 'approved';
