@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { apiRequest } from '../api'
 import { useAuth } from '../auth'
 import MediaAsset from '../components/MediaAsset'
+import { getDisplayName, getInitial } from '../utils/text'
 
 function formatDate(value) {
   return new Intl.DateTimeFormat('pt-BR', {
@@ -306,10 +307,10 @@ export default function EventsPage() {
               <div className="post-card-footer">
                 <div className="user-chip">
                   <div className="avatar-circle avatar-mini">
-                    {(item.host?.displayName || 'P').slice(0, 1).toUpperCase()}
+                    {getInitial(item.host?.displayName, 'P')}
                   </div>
                   <div>
-                    <strong>{item.host?.displayName || 'Comunidade'}</strong>
+                    <strong>{getDisplayName(item.host?.displayName, 'Comunidade')}</strong>
                     <p>{item.pico?.name}</p>
                   </div>
                 </div>

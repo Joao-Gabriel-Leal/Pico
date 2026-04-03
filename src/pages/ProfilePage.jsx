@@ -7,6 +7,7 @@ import PostDialog from '../components/PostDialog'
 import SportPicker from '../components/SportPicker'
 import { uploadSelectedFile } from '../utils/files'
 import { formatLocation, getCurrentPosition } from '../utils/geo'
+import { getDisplayName, getInitial } from '../utils/text'
 
 function toggleId(list, id) {
   return list.includes(id) ? list.filter((item) => item !== id) : [...list, id]
@@ -84,7 +85,7 @@ export default function ProfilePage() {
     setError('')
 
     try {
-      const location = await getCurrentPosition()
+      const location = await getCurrentPosition({ force: true })
       setForm((current) => ({ ...current, location }))
     } catch (nextError) {
       setError(nextError.message)
@@ -217,10 +218,10 @@ export default function ProfilePage() {
         <div className="profile-hero-top">
           <div className="profile-hero-avatar-block">
             {form.avatarUrl ? (
-              <MediaAsset className="profile-avatar-hero" src={form.avatarUrl} alt={form.displayName || user.displayName} />
+              <MediaAsset className="profile-avatar-hero" src={form.avatarUrl} alt={getDisplayName(form.displayName || user.displayName)} />
             ) : (
               <div className="avatar-circle profile-avatar-hero">
-                {(form.displayName || user.displayName).slice(0, 1).toUpperCase()}
+                {getInitial(form.displayName || user.displayName)}
               </div>
             )}
           </div>
@@ -228,7 +229,7 @@ export default function ProfilePage() {
           <div className="profile-hero-main">
             <div className="profile-identity-row">
               <div>
-                <h1>{form.displayName || user.displayName}</h1>
+                <h1>{getDisplayName(form.displayName || user.displayName)}</h1>
                 <p>@{user.username}</p>
               </div>
             </div>
@@ -249,7 +250,7 @@ export default function ProfilePage() {
             </div>
 
             <div className="profile-bio-block">
-              <strong>{form.displayName || user.displayName}</strong>
+              <strong>{getDisplayName(form.displayName || user.displayName)}</strong>
               {form.bio ? <p>{form.bio}</p> : null}
               <span>{formatLocation(form.location)}</span>
             </div>

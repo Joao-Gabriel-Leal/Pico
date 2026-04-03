@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { apiRequest } from '../api'
 import { useAuth } from '../auth'
 import MediaAsset from '../components/MediaAsset'
+import { getDisplayName, getInitial } from '../utils/text'
 
 function formatRelativeDate(value) {
   const date = new Date(value)
@@ -117,13 +118,13 @@ export default function NotificationsPage() {
                 <Link key={item.id} className="notification-item list-item" to={item.targetPath}>
                   <div className="user-chip">
                     {item.actor.avatarUrl ? (
-                      <MediaAsset className="avatar-circle avatar-mini" src={item.actor.avatarUrl} alt={item.actor.displayName} />
+                      <MediaAsset className="avatar-circle avatar-mini" src={item.actor.avatarUrl} alt={getDisplayName(item.actor.displayName)} />
                     ) : (
-                      <div className="avatar-circle avatar-mini">{item.actor.displayName.slice(0, 1).toUpperCase()}</div>
+                      <div className="avatar-circle avatar-mini">{getInitial(item.actor.displayName)}</div>
                     )}
                     <div className="notification-copy">
                       <p>
-                        <strong>{item.actor.displayName}</strong> {item.text}
+                        <strong>{getDisplayName(item.actor.displayName)}</strong> {item.text}
                       </p>
                       {item.secondaryText ? <span>{item.secondaryText}</span> : null}
                     </div>
@@ -150,13 +151,13 @@ export default function NotificationsPage() {
                 <Link key={item.id} className="notification-item list-item" to={item.targetPath}>
                   <div className="user-chip">
                     {item.actor.avatarUrl ? (
-                      <MediaAsset className="avatar-circle avatar-mini" src={item.actor.avatarUrl} alt={item.actor.displayName} />
+                      <MediaAsset className="avatar-circle avatar-mini" src={item.actor.avatarUrl} alt={getDisplayName(item.actor.displayName)} />
                     ) : (
-                      <div className="avatar-circle avatar-mini">{item.actor.displayName.slice(0, 1).toUpperCase()}</div>
+                      <div className="avatar-circle avatar-mini">{getInitial(item.actor.displayName)}</div>
                     )}
                     <div className="notification-copy">
                       <p>
-                        <strong>{item.actor.displayName}</strong> {item.text}
+                        <strong>{getDisplayName(item.actor.displayName)}</strong> {item.text}
                       </p>
                       {item.secondaryText ? <span>{item.secondaryText}</span> : null}
                     </div>

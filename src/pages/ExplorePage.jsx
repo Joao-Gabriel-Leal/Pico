@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   CircleMarker,
@@ -14,6 +14,7 @@ import { apiRequest } from '../api'
 import { useAuth } from '../auth'
 import MediaAsset from '../components/MediaAsset'
 import { distanceBetween, getCurrentPosition } from '../utils/geo'
+import { getStoredLocation, hasLocationAutoRequested, markLocationAutoRequested } from '../utils/location-cache'
 
 const defaultCenter = [-23.55052, -46.633308]
 const markerPalette = ['orange', 'blue', 'green', 'gold', 'violet', 'red']
@@ -85,21 +86,54 @@ const createSpotIcon = L.divIcon({
 export default function ExplorePage() {
   const navigate = useNavigate()
   const { user, token } = useAuth()
+  const initialLocation = user?.location || getStoredLocation() || null
+  const autoLocateRef = useRef(false)
   const [sports, setSports] = useState([])
   const [items, setItems] = useState([])
   const [activeSport, setActiveSport] = useState('all')
   const [selectedSlug, setSelectedSlug] = useState('')
-  const [userPosition, setUserPosition] = useState(user?.location || null)
+  const [userPosition, setUserPosition] = useState(initialLocation)
   const [pickedLocation, setPickedLocation] = useState(null)
   const [loadingLocation, setLoadingLocation] = useState(false)
   const [loadingPicos, setLoadingPicos] = useState(true)
   const [statusMessage, setStatusMessage] = useState('')
   const [bounds, setBounds] = useState(null)
   const [viewportRequest, setViewportRequest] = useState({
-    center: user?.location ? [user.location.latitude, user.location.longitude] : defaultCenter,
-    zoom: user?.location ? 15 : 12,
+    center: initialLocation ? [initialLocation.latitude, initialLocation.longitude] : defaultCenter,
+    zoom: initialLocation ? 15 : 12,
     key: 'initial',
   })
+
+  useEffect(() => {
+    const nextLocation = user?.location || getStoredLocation() || null
+    if (!nextLocation) return
+
+    setUserPosition(nextLocation)
+    setViewportRequest((current) => {
+      if (
+        current.center?.[0] === nextLocation.latitude &&
+        current.center?.[1] === nextLocation.longitude
+      ) {
+        return current
+      }
+
+      return {
+        center: [nextLocation.latitude, nextLocation.longitude],
+        zoom: 15,
+        key: `cached-${nextLocation.latitude}-${nextLocation.longitude}`,
+      }
+    })
+  }, [user?.location?.latitude, user?.location?.longitude])
+
+  useEffect(() => {
+    if (autoLocateRef.current) return
+    autoLocateRef.current = true
+
+    if (user?.location || getStoredLocation() || hasLocationAutoRequested()) return
+
+    markLocationAutoRequested()
+    focusExactLocation({ silent: true })
+  }, [user?.location?.latitude, user?.location?.longitude])
 
   useEffect(() => {
     async function loadBootstrap() {
@@ -164,9 +198,11 @@ export default function ExplorePage() {
     [itemsWithDistance, selectedSlug],
   )
 
-  async function focusExactLocation() {
+  async function focusExactLocation({ silent = false } = {}) {
     setLoadingLocation(true)
-    setStatusMessage('Capturando sua localizacao exata...')
+    if (!silent) {
+      setStatusMessage('Capturando sua localizacao exata...')
+    }
 
     try {
       const location = await getCurrentPosition()
@@ -176,9 +212,9 @@ export default function ExplorePage() {
         zoom: 15,
         key: `${location.latitude}-${location.longitude}-${Date.now()}`,
       })
-      setStatusMessage('Localizacao atualizada')
+      setStatusMessage(silent ? '' : 'Localizacao atualizada')
     } catch (nextError) {
-      setStatusMessage(nextError.message)
+      setStatusMessage(silent ? '' : nextError.message)
     } finally {
       setLoadingLocation(false)
     }

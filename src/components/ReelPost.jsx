@@ -4,6 +4,7 @@ import { apiRequest } from '../api'
 import MediaAsset from './MediaAsset'
 import ShareSheet from './ShareSheet'
 import { CommentIcon, HeartIcon, MoreIcon, SendIcon } from './AppIcons'
+import { getDisplayName, getInitial } from '../utils/text'
 
 function formatDate(value) {
   return new Intl.DateTimeFormat('pt-BR', {
@@ -178,14 +179,14 @@ export default function ReelPost({ item, token, currentUser, onUpdated, onDelete
           <div className="reel-overlay-copy">
             <div className="reel-author-row">
               {localItem.author?.avatarUrl ? (
-                <MediaAsset className="avatar-circle avatar-mini" src={localItem.author.avatarUrl} alt={localItem.author.displayName} />
+                <MediaAsset className="avatar-circle avatar-mini" src={localItem.author.avatarUrl} alt={getDisplayName(localItem.author?.displayName, 'Comunidade')} />
               ) : (
                 <div className="avatar-circle avatar-mini">
-                  {(localItem.author?.displayName || 'P').slice(0, 1).toUpperCase()}
+                  {getInitial(localItem.author?.displayName, 'P')}
                 </div>
               )}
               <div>
-                <strong>{localItem.author?.username || localItem.author?.displayName}</strong>
+                <strong>{localItem.author?.username || getDisplayName(localItem.author?.displayName, 'picomap')}</strong>
                 <p>
                   {localItem.pico?.name} - {formatDate(localItem.createdAt)}
                 </p>
@@ -248,7 +249,7 @@ export default function ReelPost({ item, token, currentUser, onUpdated, onDelete
               {localItem.comments?.length ? (
                 localItem.comments.map((comment) => (
                   <article key={comment.id} className="comment-card">
-                    <strong>{comment.author?.displayName || 'Comunidade'}</strong>
+                    <strong>{getDisplayName(comment.author?.displayName, 'Comunidade')}</strong>
                     <p>{comment.text}</p>
                   </article>
                 ))

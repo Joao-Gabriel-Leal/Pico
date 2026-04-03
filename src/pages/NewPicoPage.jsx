@@ -4,6 +4,7 @@ import { apiRequest } from '../api'
 import { useAuth } from '../auth'
 import { uploadSelectedFile } from '../utils/files'
 import { formatLocation, getCurrentPosition } from '../utils/geo'
+import { getStoredLocation } from '../utils/location-cache'
 
 function formatMapPoint(latitude, longitude) {
   if (latitude === '' || longitude === '') return 'Nenhum ponto definido ainda'
@@ -55,12 +56,13 @@ export default function NewPicoPage() {
       return
     }
 
-    if (!user?.location) return
+    const preferredLocation = user?.location || getStoredLocation()
+    if (!preferredLocation) return
 
     setForm((current) => ({
       ...current,
-      latitude: current.latitude || Number(user.location.latitude).toFixed(6),
-      longitude: current.longitude || Number(user.location.longitude).toFixed(6),
+      latitude: current.latitude || Number(preferredLocation.latitude).toFixed(6),
+      longitude: current.longitude || Number(preferredLocation.longitude).toFixed(6),
     }))
   }, [searchParams, user])
 
@@ -74,7 +76,7 @@ export default function NewPicoPage() {
     setError('')
 
     try {
-      const location = await getCurrentPosition()
+      const location = await getCurrentPosition({ force: true })
       setForm((current) => ({
         ...current,
         latitude: location.latitude.toFixed(6),

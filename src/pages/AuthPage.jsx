@@ -49,7 +49,7 @@ export default function AuthPage() {
     setError('')
 
     try {
-      const location = await getCurrentPosition()
+      const location = await getCurrentPosition({ force: true })
       setRegisterForm((current) => ({ ...current, location }))
     } catch (nextError) {
       setError(nextError.message)

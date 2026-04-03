@@ -46,6 +46,15 @@ function normalizeString(value) {
   return String(value || '').trim()
 }
 
+function getDisplayNameFromRow(row) {
+  return (
+    normalizeString(row.display_name) ||
+    normalizeString(row.username) ||
+    normalizeEmail(row.email).split('@')[0] ||
+    'PicoMap'
+  )
+}
+
 function truncateText(value, limit = 120) {
   const cleanValue = normalizeString(value)
   if (!cleanValue) return ''
@@ -104,6 +113,7 @@ function buildLocationFromRow(row) {
   const latitude = safeNumber(row.latitude)
   const longitude = safeNumber(row.longitude)
   if (latitude === null || longitude === null) return null
+  if (latitude === 0 && longitude === 0) return null
 
   return {
     latitude,
@@ -150,7 +160,7 @@ function mapUserViewRow(row) {
     id: row.id,
     email: row.email,
     username: row.username,
-    displayName: row.display_name,
+    displayName: getDisplayNameFromRow(row),
     bio: row.bio || '',
     avatarUrl: row.avatar_url || '',
     location: buildLocationFromRow(row),
@@ -1609,7 +1619,11 @@ export async function createRepository() {
 
     async listPicos(filters = {}, currentUserId = null) {
       const params = []
-      const whereClauses = []
+      const whereClauses = [
+        'pico.latitude is not null',
+        'pico.longitude is not null',
+        'not (pico.latitude = 0 and pico.longitude = 0)',
+      ]
       const permissionKeys = currentUserId ? await getUserPermissionKeys({ query }, currentUserId) : []
 
       if (filters.sportSlug && filters.sportSlug !== 'all') {

@@ -4,6 +4,7 @@ import { apiRequest } from '../api'
 import MediaAsset from './MediaAsset'
 import ShareSheet from './ShareSheet'
 import { CommentIcon, HeartIcon, MoreIcon, SendIcon, ShareIcon } from './AppIcons'
+import { getDisplayName, getInitial } from '../utils/text'
 
 function formatDate(value) {
   return new Intl.DateTimeFormat('pt-BR', {
@@ -149,15 +150,15 @@ export default function SocialPostCard({
                 <MediaAsset
                   className="avatar-circle avatar-mini"
                   src={localItem.author.avatarUrl}
-                  alt={localItem.author.displayName}
+                  alt={getDisplayName(localItem.author?.displayName, 'Comunidade')}
                 />
               ) : (
                 <div className="avatar-circle avatar-mini">
-                  {(localItem.author?.displayName || 'P').slice(0, 1).toUpperCase()}
+                  {getInitial(localItem.author?.displayName, 'P')}
                 </div>
               )}
               <div>
-                <strong>{localItem.author?.displayName || 'Comunidade'}</strong>
+                <strong>{getDisplayName(localItem.author?.displayName, 'Comunidade')}</strong>
                 <p>
                   @{localItem.author?.username || 'picomap'} - {formatDate(localItem.createdAt)}
                 </p>
@@ -166,10 +167,10 @@ export default function SocialPostCard({
           ) : (
             <div className="user-chip post-author-link">
               <div className="avatar-circle avatar-mini">
-                {(localItem.author?.displayName || 'P').slice(0, 1).toUpperCase()}
+                {getInitial(localItem.author?.displayName, 'P')}
               </div>
               <div>
-                <strong>{localItem.author?.displayName || 'Comunidade'}</strong>
+                <strong>{getDisplayName(localItem.author?.displayName, 'Comunidade')}</strong>
                 <p>{formatDate(localItem.createdAt)}</p>
               </div>
             </div>
@@ -280,7 +281,7 @@ export default function SocialPostCard({
           <div className="comment-stack">
             {recentComments.map((comment) => (
               <div key={comment.id} className="comment-card">
-                <strong>{comment.author?.displayName || 'Comunidade'}</strong>
+                <strong>{getDisplayName(comment.author?.displayName, 'Comunidade')}</strong>
                 <p>{comment.text}</p>
               </div>
             ))}

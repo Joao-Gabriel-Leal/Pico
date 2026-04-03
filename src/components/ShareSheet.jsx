@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiRequest } from '../api'
 import MediaAsset from './MediaAsset'
+import { getDisplayName, getInitial } from '../utils/text'
 
 function makeTargetKey(type, id) {
   return `${type}:${id}`
@@ -175,16 +176,16 @@ export default function ShareSheet({ open, onClose, token, media, onShared }) {
                 >
                   <div className="share-target-avatar-shell">
                     {person.avatarUrl ? (
-                      <MediaAsset className="share-target-avatar" src={person.avatarUrl} alt={person.displayName} />
+                      <MediaAsset className="share-target-avatar" src={person.avatarUrl} alt={getDisplayName(person.displayName)} />
                     ) : (
                       <div className="avatar-circle share-target-avatar">
-                        {person.displayName.slice(0, 1).toUpperCase()}
+                        {getInitial(person.displayName)}
                       </div>
                     )}
                     {active ? <span className="share-target-check">OK</span> : null}
                   </div>
-                  <strong>{person.displayName}</strong>
-                  <span>@{person.username}</span>
+                  <strong>{getDisplayName(person.displayName)}</strong>
+                  <span>@{person.username || 'picomap'}</span>
                 </button>
               )
             })}
@@ -206,14 +207,14 @@ export default function ShareSheet({ open, onClose, token, media, onShared }) {
                 >
                   <div className="share-group-user">
                     {item.avatarUrl ? (
-                      <MediaAsset className="share-group-avatar" src={item.avatarUrl} alt={item.displayName} />
+                      <MediaAsset className="share-group-avatar" src={item.avatarUrl} alt={getDisplayName(item.displayName, 'Grupo')} />
                     ) : (
                       <div className="avatar-circle share-group-avatar">
-                        {(item.displayName || 'G').slice(0, 1).toUpperCase()}
+                        {getInitial(item.displayName, 'G')}
                       </div>
                     )}
                     <div>
-                      <strong>{item.displayName}</strong>
+                      <strong>{getDisplayName(item.displayName, 'Grupo')}</strong>
                       <p>Grupo</p>
                     </div>
                   </div>

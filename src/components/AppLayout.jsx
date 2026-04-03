@@ -13,6 +13,7 @@ import {
   SearchIcon,
 } from './AppIcons'
 import MediaAsset from './MediaAsset'
+import { getDisplayName, getInitial } from '../utils/text'
 
 const navItems = [
   { to: '/mapa', label: 'Mapa', shortLabel: 'Mapa', Icon: MapIcon },
@@ -116,13 +117,13 @@ export default function AppLayout() {
             <>
               <div className="user-chip">
                 {user.avatarUrl ? (
-                  <MediaAsset className="avatar-circle avatar-mini" src={user.avatarUrl} alt={user.displayName} />
+                  <MediaAsset className="avatar-circle avatar-mini" src={user.avatarUrl} alt={getDisplayName(user.displayName)} />
                 ) : (
-                  <div className="avatar-circle avatar-mini">{user.displayName.slice(0, 1).toUpperCase()}</div>
+                  <div className="avatar-circle avatar-mini">{getInitial(user.displayName)}</div>
                 )}
                 <div>
-                  <strong>{user.displayName}</strong>
-                  <p>@{user.username}</p>
+                  <strong>{getDisplayName(user.displayName)}</strong>
+                  <p>@{user.username || 'picomap'}</p>
                 </div>
               </div>
               <button className="ghost-button" onClick={logout}>
@@ -161,9 +162,9 @@ export default function AppLayout() {
             {user ? (
               <Link className="profile-nav-button" to="/perfil" aria-label="Abrir perfil">
                 {user.avatarUrl ? (
-                  <MediaAsset className="profile-nav-avatar-image" src={user.avatarUrl} alt={user.displayName} />
+                  <MediaAsset className="profile-nav-avatar-image" src={user.avatarUrl} alt={getDisplayName(user.displayName)} />
                 ) : (
-                  <span className="profile-nav-avatar">{user.displayName.slice(0, 1).toUpperCase()}</span>
+                  <span className="profile-nav-avatar">{getInitial(user.displayName)}</span>
                 )}
               </Link>
             ) : (

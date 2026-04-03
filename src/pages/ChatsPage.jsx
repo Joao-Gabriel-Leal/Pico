@@ -4,6 +4,7 @@ import { apiRequest } from '../api'
 import { useAuth } from '../auth'
 import MediaAsset from '../components/MediaAsset'
 import { HeartIcon, PlusIcon, SendIcon } from '../components/AppIcons'
+import { getDisplayName, getInitial } from '../utils/text'
 
 function formatTime(value) {
   return new Intl.DateTimeFormat('pt-BR', {
@@ -23,7 +24,7 @@ function getConversationPreview(conversation) {
 }
 
 function getConversationName(conversation) {
-  return conversation?.displayName || conversation?.otherUser?.displayName || 'Conversa'
+  return getDisplayName(conversation?.displayName || conversation?.otherUser?.displayName, 'Conversa')
 }
 
 export default function ChatsPage() {
@@ -279,13 +280,13 @@ export default function ChatsPage() {
               onClick={() => handleStartConversation(person.id)}
             >
               {person.avatarUrl ? (
-                <MediaAsset className="chat-mutual-avatar" src={person.avatarUrl} alt={person.displayName} />
+                <MediaAsset className="chat-mutual-avatar" src={person.avatarUrl} alt={getDisplayName(person.displayName)} />
               ) : (
                 <div className="avatar-circle chat-mutual-avatar">
-                  {person.displayName.slice(0, 1).toUpperCase()}
+                  {getInitial(person.displayName)}
                 </div>
               )}
-              <span>{person.displayName}</span>
+              <span>{getDisplayName(person.displayName)}</span>
             </button>
           ))}
         </div>
@@ -309,7 +310,7 @@ export default function ChatsPage() {
                 <MediaAsset className="chat-row-avatar" src={conversation.otherUser.avatarUrl} alt={conversation.displayName} />
               ) : (
                 <div className="avatar-circle chat-row-avatar">
-                  {getConversationName(conversation).slice(0, 1).toUpperCase()}
+                  {getInitial(getConversationName(conversation), 'C')}
                 </div>
               )}
 
@@ -340,7 +341,7 @@ export default function ChatsPage() {
                   <MediaAsset className="chat-row-avatar" src={selectedConversation.otherUser.avatarUrl} alt={selectedConversation.displayName} />
                 ) : (
                   <div className="avatar-circle chat-row-avatar">
-                    {getConversationName(selectedConversation).slice(0, 1).toUpperCase()}
+                    {getInitial(getConversationName(selectedConversation), 'C')}
                   </div>
                 )}
                 <div>
@@ -370,7 +371,7 @@ export default function ChatsPage() {
                         <MediaAsset className="chat-message-avatar" src={item.sender.avatarUrl} alt={item.sender.displayName} />
                       ) : (
                         <div className="avatar-circle chat-message-avatar">
-                          {(item.sender?.displayName || 'P').slice(0, 1).toUpperCase()}
+                          {getInitial(item.sender?.displayName, 'P')}
                         </div>
                       )
                     ) : null}
@@ -389,7 +390,7 @@ export default function ChatsPage() {
                             <img className="shared-message-thumb" src={item.sharedMedia.fileUrl} alt={item.sharedMedia.title} />
                           )}
                           <div className="shared-message-copy">
-                            <strong>{item.sharedMedia.author?.username || item.sharedMedia.author?.displayName}</strong>
+                            <strong>{item.sharedMedia.author?.username || getDisplayName(item.sharedMedia.author?.displayName, 'picomap')}</strong>
                             <span>{item.sharedMedia.title}</span>
                             <small>{item.sharedMedia.pico.name}</small>
                           </div>
@@ -464,15 +465,15 @@ export default function ChatsPage() {
                 >
                   <div className="chat-thread-user">
                     {person.avatarUrl ? (
-                      <MediaAsset className="chat-row-avatar" src={person.avatarUrl} alt={person.displayName} />
+                      <MediaAsset className="chat-row-avatar" src={person.avatarUrl} alt={getDisplayName(person.displayName)} />
                     ) : (
                       <div className="avatar-circle chat-row-avatar">
-                        {person.displayName.slice(0, 1).toUpperCase()}
+                        {getInitial(person.displayName)}
                       </div>
                     )}
                     <div>
-                      <strong>{person.displayName}</strong>
-                      <p>@{person.username}</p>
+                      <strong>{getDisplayName(person.displayName)}</strong>
+                      <p>@{person.username || 'picomap'}</p>
                     </div>
                   </div>
                   <span className={groupParticipants.includes(person.id) ? 'status-pill active-share-pill' : 'status-pill'}>

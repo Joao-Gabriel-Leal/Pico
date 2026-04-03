@@ -4,6 +4,7 @@ import { apiRequest } from '../api'
 import { useAuth } from '../auth'
 import MediaAsset from '../components/MediaAsset'
 import PostDialog from '../components/PostDialog'
+import { getDisplayName, getInitial } from '../utils/text'
 
 export default function UserProfilePage() {
   const { userId } = useParams()
@@ -84,10 +85,10 @@ export default function UserProfilePage() {
         <div className="profile-hero-top">
           <div className="profile-hero-avatar-block">
             {detail.person.avatarUrl ? (
-              <MediaAsset className="profile-avatar-hero" src={detail.person.avatarUrl} alt={detail.person.displayName} />
+              <MediaAsset className="profile-avatar-hero" src={detail.person.avatarUrl} alt={getDisplayName(detail.person.displayName)} />
             ) : (
               <div className="avatar-circle profile-avatar-hero">
-                {detail.person.displayName.slice(0, 1).toUpperCase()}
+                {getInitial(detail.person.displayName)}
               </div>
             )}
           </div>
@@ -95,8 +96,8 @@ export default function UserProfilePage() {
           <div className="profile-hero-main">
             <div className="profile-identity-row">
               <div>
-                <h1>{detail.person.displayName}</h1>
-                <p>@{detail.person.username}</p>
+                <h1>{getDisplayName(detail.person.displayName)}</h1>
+                <p>@{detail.person.username || 'picomap'}</p>
               </div>
             </div>
 
@@ -116,7 +117,7 @@ export default function UserProfilePage() {
             </div>
 
             <div className="profile-bio-block">
-              <strong>{detail.person.displayName}</strong>
+              <strong>{getDisplayName(detail.person.displayName)}</strong>
               {detail.person.bio ? <p>{detail.person.bio}</p> : null}
             </div>
 

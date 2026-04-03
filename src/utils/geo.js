@@ -1,4 +1,11 @@
-export function getCurrentPosition() {
+import { getStoredLocation, setStoredLocation } from './location-cache'
+
+export function getCurrentPosition({ force = false } = {}) {
+  const cachedLocation = force ? null : getStoredLocation()
+  if (cachedLocation) {
+    return Promise.resolve(cachedLocation)
+  }
+
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
       reject(new Error('Seu navegador nao suporta geolocalizacao.'))
@@ -7,18 +14,20 @@ export function getCurrentPosition() {
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        resolve({
+        const location = {
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
           accuracy: position.coords.accuracy,
           updatedAt: new Date().toISOString(),
-        })
+        }
+        setStoredLocation(location)
+        resolve(location)
       },
       () => reject(new Error('Nao foi possivel capturar sua localizacao exata.')),
       {
         enableHighAccuracy: true,
         timeout: 15000,
-        maximumAge: 5000,
+        maximumAge: force ? 0 : 300000,
       },
     )
   })

@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { apiRequest } from '../api'
 import { useAuth } from '../auth'
 import MediaAsset from '../components/MediaAsset'
+import { getDisplayName, getInitial } from '../utils/text'
 
 export default function SearchPage() {
   const navigate = useNavigate()
@@ -118,16 +119,16 @@ export default function SearchPage() {
           <article key={person.id} className="search-person-row">
             <Link className="search-person-main" to={`/pessoas/${person.id}`}>
               {person.avatarUrl ? (
-                <MediaAsset className="search-person-avatar" src={person.avatarUrl} alt={person.displayName} />
+                <MediaAsset className="search-person-avatar" src={person.avatarUrl} alt={getDisplayName(person.displayName)} />
               ) : (
                 <div className="avatar-circle search-person-avatar">
-                  {person.displayName.slice(0, 1).toUpperCase()}
+                  {getInitial(person.displayName)}
                 </div>
               )}
 
               <div className="search-person-copy">
-                <strong>{person.displayName}</strong>
-                <p>@{person.username}</p>
+                <strong>{getDisplayName(person.displayName)}</strong>
+                <p>@{person.username || 'picomap'}</p>
               </div>
             </Link>
 
