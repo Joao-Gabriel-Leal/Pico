@@ -3,13 +3,17 @@ import dotenv from 'dotenv'
 
 dotenv.config({ quiet: true })
 
+function normalizeEnvValue(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^['"]+|['"]+$/g, '')
+}
+
 function getCloudinaryConfig() {
-  const {
-    CLOUDINARY_CLOUD_NAME,
-    CLOUDINARY_API_KEY,
-    CLOUDINARY_API_SECRET,
-    CLOUDINARY_UPLOAD_FOLDER,
-  } = process.env
+  const CLOUDINARY_CLOUD_NAME = normalizeEnvValue(process.env.CLOUDINARY_CLOUD_NAME)
+  const CLOUDINARY_API_KEY = normalizeEnvValue(process.env.CLOUDINARY_API_KEY)
+  const CLOUDINARY_API_SECRET = normalizeEnvValue(process.env.CLOUDINARY_API_SECRET)
+  const CLOUDINARY_UPLOAD_FOLDER = normalizeEnvValue(process.env.CLOUDINARY_UPLOAD_FOLDER)
 
   if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_API_KEY || !CLOUDINARY_API_SECRET) {
     throw new Error('Configure CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY e CLOUDINARY_API_SECRET.')
