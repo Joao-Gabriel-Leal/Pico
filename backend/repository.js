@@ -46,6 +46,13 @@ function normalizeString(value) {
   return String(value || '').trim()
 }
 
+function truncateText(value, limit = 120) {
+  const cleanValue = normalizeString(value)
+  if (!cleanValue) return ''
+  if (cleanValue.length <= limit) return cleanValue
+  return `${cleanValue.slice(0, limit - 1).trimEnd()}…`
+}
+
 function normalizeEmail(value) {
   return normalizeString(value).toLowerCase()
 }
@@ -208,6 +215,91 @@ function mapEventRow(row) {
     sport: mapSportRow(row),
     entryFeeLabel: money(row.entry_fee_cents),
     prizePoolLabel: money(row.prize_pool_cents),
+  }
+}
+
+async function createNotification(
+  client,
+  {
+    userId,
+    actorUserId,
+    kind,
+    entityId = null,
+    textPreview = '',
+  },
+) {
+  if (!userId || !actorUserId || userId === actorUserId) return null
+
+  await client.query(
+    `
+      insert into app_notification (
+        user_id,
+        actor_user_id,
+        kind,
+        entity_id,
+        text_preview
+      )
+      values ($1, $2, $3, $4, $5)
+    `,
+    [userId, actorUserId, kind, entityId, truncateText(textPreview, 180)],
+  )
+
+  return true
+}
+
+async function buildNotificationItem(client, row, currentUserId) {
+  const actor = await getPublicUserViewById(client, row.actor_user_id, currentUserId)
+  if (!actor) return null
+
+  const baseItem = {
+    id: row.id,
+    kind: row.kind,
+    createdAt: new Date(row.created_at).toISOString(),
+    isRead: Boolean(row.read_at),
+    actor,
+    previewImageUrl: '',
+    targetPath: `/pessoas/${actor.id}`,
+    text: '',
+    secondaryText: row.text_preview || '',
+  }
+
+  if (row.kind === 'follow') {
+    return {
+      ...baseItem,
+      text: 'comecou a seguir voce',
+      secondaryText: '',
+    }
+  }
+
+  if (row.kind === 'dm_message') {
+    return {
+      ...baseItem,
+      text: 'enviou uma mensagem',
+      targetPath: `/conversas?conversation=${row.entity_id}`,
+      secondaryText: truncateText(row.text_preview, 80),
+    }
+  }
+
+  const mediaRow = row.entity_id ? await getMediaRowById(client, row.entity_id) : null
+  if (!mediaRow) {
+    return {
+      ...baseItem,
+      text: row.kind === 'media_comment' ? 'comentou na sua publicacao' : 'curtiu sua publicacao',
+    }
+  }
+
+  const picoSummary = await buildPicoSummary(client, mediaRow.pico_id, currentUserId)
+  const previewImageUrl = mediaRow.media_type === 'photo' ? mediaRow.file_url || '' : ''
+
+  return {
+    ...baseItem,
+    text: row.kind === 'media_comment' ? 'comentou na sua publicacao' : 'curtiu sua publicacao',
+    previewImageUrl,
+    targetPath: picoSummary ? `/picos/${picoSummary.slug}#midia-${mediaRow.id}` : baseItem.targetPath,
+    secondaryText:
+      row.kind === 'media_comment'
+        ? truncateText(row.text_preview, 80)
+        : truncateText(mediaRow.title, 80),
   }
 }
 
@@ -1575,6 +1667,65 @@ export async function createRepository() {
       }
     },
 
+    async listNotifications(userId) {
+      const { rows } = await query(
+        `
+          select
+            id,
+            user_id,
+            actor_user_id,
+            kind,
+            entity_id,
+            text_preview,
+            created_at,
+            read_at
+          from app_notification
+          where user_id = $1
+          order by
+            case when read_at is null then 0 else 1 end,
+            created_at desc
+          limit 40
+        `,
+        [userId],
+      )
+
+      const items = (
+        await Promise.all(rows.map((row) => buildNotificationItem({ query }, row, userId)))
+      ).filter(Boolean)
+
+      return {
+        items,
+        unreadCount: rows.filter((row) => !row.read_at).length,
+      }
+    },
+
+    async markNotificationsRead(userId, notificationId = null) {
+      if (notificationId) {
+        await query(
+          `
+            update app_notification
+            set read_at = now()
+            where id = $1
+              and user_id = $2
+              and read_at is null
+          `,
+          [notificationId, userId],
+        )
+      } else {
+        await query(
+          `
+            update app_notification
+            set read_at = now()
+            where user_id = $1
+              and read_at is null
+          `,
+          [userId],
+        )
+      }
+
+      return this.listNotifications(userId)
+    },
+
     async listModerationQueue(userId) {
       const permissionKeys = await getUserPermissionKeys({ query }, userId)
       const canReviewPicos = canApprovePicos(permissionKeys)
@@ -1849,6 +2000,12 @@ export async function createRepository() {
             `,
             [currentUserId, targetUserId],
           )
+
+          await createNotification(client, {
+            userId: targetUserId,
+            actorUserId: currentUserId,
+            kind: 'follow',
+          })
         }
 
         return getPublicUserViewById(client, targetUserId, currentUserId)
@@ -1980,6 +2137,28 @@ export async function createRepository() {
             where id = $1
           `,
           [conversationId, rows[0].created_at],
+        )
+
+        const { rows: participantRows } = await client.query(
+          `
+            select user_id
+            from direct_conversation_participant
+            where conversation_id = $1
+              and user_id <> $2
+          `,
+          [conversationId, userId],
+        )
+
+        await Promise.all(
+          participantRows.map((participant) =>
+            createNotification(client, {
+              userId: participant.user_id,
+              actorUserId: userId,
+              kind: 'dm_message',
+              entityId: conversationId,
+              textPreview: cleanText,
+            }),
+          ),
         )
 
         await markConversationRead(client, conversationId, userId)
@@ -2664,6 +2843,14 @@ export async function createRepository() {
             `,
             [mediaId],
           )
+
+          await createNotification(client, {
+            userId: mediaRow.user_id,
+            actorUserId: userId,
+            kind: 'media_like',
+            entityId: mediaId,
+            textPreview: mediaRow.title,
+          })
         } else {
           await client.query(
             `
@@ -2714,6 +2901,14 @@ export async function createRepository() {
           `,
           [mediaId],
         )
+
+        await createNotification(client, {
+          userId: mediaRow.user_id,
+          actorUserId: userId,
+          kind: 'media_comment',
+          entityId: mediaId,
+          textPreview: cleanText,
+        })
 
         return buildMediaDetail(client, await getMediaRowById(client, mediaId), userId)
       })
@@ -2918,7 +3113,14 @@ export function validatePicoPayload(payload) {
     throw new Error('Selecione o esporte principal.')
   }
 
-  if (safeNumber(payload.latitude) === null || safeNumber(payload.longitude) === null) {
+  const latitude = safeNumber(payload.latitude)
+  const longitude = safeNumber(payload.longitude)
+
+  if (latitude === null || longitude === null) {
     throw new Error('Escolha o ponto do pico no mapa ou use sua localizacao exata.')
+  }
+
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180 || (latitude === 0 && longitude === 0)) {
+    throw new Error('Confirme um ponto valido no mapa antes de criar o pico.')
   }
 }

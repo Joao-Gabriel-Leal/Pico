@@ -93,9 +93,7 @@ export default function ExplorePage() {
   const [pickedLocation, setPickedLocation] = useState(null)
   const [loadingLocation, setLoadingLocation] = useState(false)
   const [loadingPicos, setLoadingPicos] = useState(true)
-  const [statusMessage, setStatusMessage] = useState(
-    'Arraste o mapa livremente. Sua localizacao so muda quando voce tocar em "Centralizar".',
-  )
+  const [statusMessage, setStatusMessage] = useState('Mapa livre')
   const [bounds, setBounds] = useState(null)
   const [viewportRequest, setViewportRequest] = useState({
     center: user?.location ? [user.location.latitude, user.location.longitude] : defaultCenter,
@@ -178,7 +176,7 @@ export default function ExplorePage() {
         zoom: 15,
         key: `${location.latitude}-${location.longitude}-${Date.now()}`,
       })
-      setStatusMessage('Sua localizacao foi atualizada. Agora o mapa fica livre ate voce recentralizar de novo.')
+      setStatusMessage('Localizacao atualizada')
     } catch (nextError) {
       setStatusMessage(nextError.message)
     } finally {
@@ -189,17 +187,12 @@ export default function ExplorePage() {
   return (
     <section className="page-grid">
       <div className="page-column page-column-main">
-        <div className="hero-card">
-          <div>
-            <p className="eyebrow">Explorar picos</p>
-            <h1>Mapa livre no mobile, leve no desktop e focado no que esta perto.</h1>
-            <p className="hero-copy">
-              O mapa nao volta mais sozinho para sua posicao. Voce move livremente, toca num ponto
-              vazio para sugerir um pico e so recentraliza quando quiser.
-            </p>
-          </div>
-
-          <div className="hero-actions">
+        <div className="toolbar-card compact-page-header">
+          <div className="section-title compact-section-title">
+            <div>
+              <p className="eyebrow">Explorar</p>
+              <h1>Mapa</h1>
+            </div>
             <button className="secondary-button" onClick={focusExactLocation} disabled={loadingLocation}>
               {loadingLocation ? 'Centralizando...' : 'Centralizar'}
             </button>
@@ -207,6 +200,7 @@ export default function ExplorePage() {
               Marcar novo pico
             </Link>
           </div>
+          <span className="toolbar-helper-text">{statusMessage}</span>
         </div>
 
         <div className="toolbar-card">
@@ -233,7 +227,7 @@ export default function ExplorePage() {
           <div className="map-card-header">
             <div>
               <strong>Mapa principal</strong>
-              <p>{statusMessage}</p>
+              <p>{loadingPicos ? 'Atualizando picos visiveis...' : 'Toque num ponto vazio para criar um pico ali.'}</p>
             </div>
             <span className="status-pill">{loadingPicos ? 'atualizando picos' : `${items.length} picos`}</span>
           </div>
@@ -254,11 +248,11 @@ export default function ExplorePage() {
                 viewportRequest={viewportRequest}
                 onBoundsChange={setBounds}
                 onManualMove={() =>
-                  setStatusMessage('Mapa livre. Toque num ponto vazio para sugerir um pico ou em "Centralizar" para voltar para voce.')
+                  setStatusMessage('Mapa livre')
                 }
                 onMapPick={(location) => {
                   setPickedLocation(location)
-                  setStatusMessage('Ponto selecionado. Agora voce pode criar um pico exatamente aqui.')
+                  setStatusMessage('Ponto marcado')
                 }}
               />
 
@@ -329,14 +323,9 @@ export default function ExplorePage() {
 
         {pickedLocation ? (
           <div className="side-card spot-sheet">
-            <div className="section-title">
-              <h2>Criar pico neste ponto</h2>
-              <span>mapa</span>
+            <div className="section-title compact-section-title">
+              <h2>Novo pico aqui</h2>
             </div>
-            <p className="muted-text">
-              Esse ponto foi marcado direto no mapa. Voce segue para a criacao com a localizacao ja
-              preenchida, sem precisar mexer em dado tecnico.
-            </p>
             <div className="inline-actions wrap-actions">
               <Link
                 className="primary-button small-link-button"
@@ -354,7 +343,7 @@ export default function ExplorePage() {
 
       <aside className="page-column rail-column">
         <div className="side-card sticky-card">
-          <div className="section-title">
+          <div className="section-title compact-section-title">
             <h2>Picos na area</h2>
             <span>{itemsWithDistance.length}</span>
           </div>
@@ -381,7 +370,7 @@ export default function ExplorePage() {
               </div>
             </article>
           ) : (
-            <p className="muted-text">Mova o mapa para carregar picos visiveis nessa regiao.</p>
+            <p className="muted-text">Nenhum pico visivel neste recorte.</p>
           )}
 
           <div className="section-divider" />

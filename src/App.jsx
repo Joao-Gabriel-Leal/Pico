@@ -8,6 +8,7 @@ import EventsPage from './pages/EventsPage'
 import ExplorePage from './pages/ExplorePage'
 import FeedPage from './pages/FeedPage'
 import NewPicoPage from './pages/NewPicoPage'
+import NotificationsPage from './pages/NotificationsPage'
 import PicoPage from './pages/PicoPage'
 import ProfilePage from './pages/ProfilePage'
 import SearchPage from './pages/SearchPage'
@@ -28,6 +29,7 @@ export default function App() {
           <Route path="/conversas" element={<ChatsPage />} />
           <Route path="/videos" element={<Navigate to="/feed" replace />} />
           <Route path="/feed" element={<FeedPage />} />
+          <Route path="/atividade" element={<NotificationsPage />} />
           <Route path="/picos/:slug" element={<PicoPage />} />
           <Route path="/perfil" element={<ProfilePage />} />
           <Route path="/pessoas/:userId" element={<UserProfilePage />} />

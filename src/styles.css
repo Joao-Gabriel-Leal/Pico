@@ -154,6 +154,59 @@ label {
   flex-shrink: 0;
 }
 
+.topbar-icon-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--text-strong);
+}
+
+.activity-badge,
+.nav-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.activity-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+}
+
+.nav-count-badge {
+  margin-left: auto;
+}
+
+.compact-page-header {
+  display: grid;
+  gap: 12px;
+}
+
+.compact-section-title {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.toolbar-helper-text {
+  color: var(--text-soft);
+  font-size: 0.92rem;
+}
+
 .create-menu-shell {
   width: 100%;
   max-width: 1180px;
@@ -389,6 +442,25 @@ label {
 .small-button,
 .small-link-button {
   padding: 10px 14px;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-strong);
+}
+
+.icon-button.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: rgba(255, 90, 42, 0.16);
 }
 
 .full-width {
@@ -976,6 +1048,12 @@ label {
   align-items: stretch;
 }
 
+.compact-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .mobile-nav {
   position: fixed;
   left: 0;
@@ -1003,13 +1081,10 @@ label {
   font-size: 0.7rem;
 }
 
-.mobile-link-dot,
-.sidebar-link-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: currentColor;
-  opacity: 0.35;
+.mobile-link svg,
+.sidebar-link svg,
+.topbar-icon-button svg {
+  flex-shrink: 0;
 }
 
 .mobile-link-avatar,
@@ -1040,9 +1115,9 @@ label {
   color: var(--text-strong);
 }
 
-.mobile-link.active .mobile-link-dot {
-  opacity: 1;
-  background: var(--accent);
+.mobile-link.active svg,
+.sidebar-link.active svg {
+  color: var(--accent);
 }
 
 .dm-layout {
@@ -1128,6 +1203,41 @@ label {
   flex: 1;
 }
 
+.search-result-main {
+  display: grid;
+  gap: 10px;
+  color: inherit;
+}
+
+.search-result-meta,
+.search-result-actions,
+.notification-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.search-result-meta {
+  color: var(--text-soft);
+  font-size: 0.85rem;
+}
+
+.compact-search-card {
+  gap: 12px;
+}
+
+.search-result-actions {
+  flex-wrap: wrap;
+}
+
+.person-bio-line {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-soft);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
 .search-result-card {
   gap: 14px;
 }
@@ -1173,6 +1283,15 @@ label {
   gap: 14px;
 }
 
+.post-author-link {
+  min-width: 0;
+}
+
+.post-author-link p,
+.notification-copy p {
+  margin: 0;
+}
+
 .post-card-actions,
 .post-action-row,
 .comment-form,
@@ -1194,6 +1313,35 @@ label {
 
 .post-action-row {
   flex-wrap: wrap;
+}
+
+.instagram-action-row {
+  gap: 4px;
+}
+
+.instagram-action-row .post-inline-link {
+  margin-left: auto;
+}
+
+.post-inline-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 8px;
+  border-radius: 999px;
+  color: var(--text-strong);
+  font-weight: 700;
+}
+
+.post-caption-line {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.post-meta-link {
+  color: var(--text-soft);
+  font-size: 0.9rem;
 }
 
 .post-action-button {
@@ -1278,6 +1426,45 @@ label {
 
 .comment-form input {
   flex: 1;
+}
+
+.send-comment-button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+}
+
+.notification-group {
+  display: grid;
+  gap: 10px;
+}
+
+.notification-item {
+  justify-content: space-between;
+}
+
+.notification-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.notification-copy span,
+.notification-meta span {
+  color: var(--text-soft);
+  font-size: 0.85rem;
+}
+
+.notification-meta {
+  margin-left: auto;
+  color: var(--text-soft);
+}
+
+.notification-preview {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid var(--line);
 }
 
 .feed-sentinel {
@@ -1461,37 +1648,18 @@ label {
 }
 
 @media (max-width: 719px) {
-  .app-topbar,
-  .section-title,
-  .map-card-header,
-  .hero-actions,
-  .inline-actions,
-  .search-input-shell,
-  .post-card-actions,
-  .post-action-row,
-  .comment-form,
-  .dm-list-meta,
   .two-column-grid,
   .location-box,
   .sport-picker-header,
   .profile-preview,
-  .list-item,
-  .post-card-header,
-  .post-card-footer,
-  .user-chip,
-  .meta-row,
   .dm-composer,
   .pico-hero-grid {
     flex-direction: column;
     align-items: flex-start;
   }
 
-  .topbar-actions,
-  .topbar-action,
-  .primary-button,
-  .secondary-button,
-  .small-link-button {
-    width: auto;
+  .page-wrapper {
+    padding: 14px 14px 94px;
   }
 
   .topbar-actions {
@@ -1500,8 +1668,14 @@ label {
     align-items: center;
   }
 
-  .inline-stats {
-    grid-template-columns: minmax(0, 1fr);
+  .compact-section-title,
+  .map-card-header,
+  .post-card-header,
+  .post-card-footer,
+  .search-result-actions,
+  .notification-item {
+    align-items: flex-start;
+    gap: 10px;
   }
 
   .hero-image {
@@ -1517,5 +1691,63 @@ label {
   .instagram-profile-counts,
   .profile-media-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mobile-link span:last-child {
+    display: none;
+  }
+
+  .mobile-nav {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    padding: 10px 8px calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-link {
+    gap: 4px;
+    min-height: 54px;
+  }
+
+  .toolbar-card,
+  .map-card,
+  .hero-card,
+  .side-card,
+  .post-card {
+    border-radius: 20px;
+  }
+
+  .side-card,
+  .post-card,
+  .hero-card {
+    padding: 14px;
+  }
+
+  .search-result-main,
+  .search-result-meta,
+  .meta-row,
+  .user-chip,
+  .post-card-header,
+  .post-card-footer,
+  .notification-item,
+  .dm-list-item {
+    width: 100%;
+  }
+
+  .notification-meta {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .instagram-action-row {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .comment-form {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .send-comment-button {
+    padding-right: 0;
   }
 }

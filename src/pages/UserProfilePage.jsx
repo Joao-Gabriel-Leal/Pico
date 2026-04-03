@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { apiRequest } from '../api'
 import { useAuth } from '../auth'
 import MediaAsset from '../components/MediaAsset'
@@ -7,6 +7,7 @@ import SocialPostCard from '../components/SocialPostCard'
 
 export default function UserProfilePage() {
   const { userId } = useParams()
+  const navigate = useNavigate()
   const { token, user, refreshUser } = useAuth()
   const [detail, setDetail] = useState(null)
   const [tab, setTab] = useState('posts')
@@ -38,6 +39,27 @@ export default function UserProfilePage() {
       await apiRequest(`/api/people/${detail.person.id}/follow`, { method: 'POST', token })
       await refreshUser()
       await loadPage()
+    } catch (nextError) {
+      setError(nextError.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleMessage() {
+    if (!token || !detail) return
+    setBusy(true)
+    setError('')
+
+    try {
+      const payload = await apiRequest('/api/dms', {
+        method: 'POST',
+        token,
+        body: {
+          recipientUserId: detail.person.id,
+        },
+      })
+      navigate(`/conversas?conversation=${payload.conversation.id}`)
     } catch (nextError) {
       setError(nextError.message)
     } finally {
@@ -88,9 +110,9 @@ export default function UserProfilePage() {
                   </button>
                 ) : null}
                 {user && user.id !== detail.person.id ? (
-                  <Link className="secondary-button small-link-button" to="/conversas">
+                  <button className="secondary-button small-link-button" type="button" onClick={handleMessage}>
                     Mensagem
-                  </Link>
+                  </button>
                 ) : null}
               </div>
             </div>

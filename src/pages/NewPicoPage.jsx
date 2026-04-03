@@ -6,8 +6,8 @@ import { uploadSelectedFile } from '../utils/files'
 import { formatLocation, getCurrentPosition } from '../utils/geo'
 
 function formatMapPoint(latitude, longitude) {
-  if (!latitude || !longitude) return 'Nenhum ponto definido ainda'
-  return `Ponto marcado no mapa e pronto para criar o pico`
+  if (latitude === '' || longitude === '') return 'Nenhum ponto definido ainda'
+  return 'Ponto marcado no mapa'
 }
 
 export default function NewPicoPage() {

@@ -181,23 +181,20 @@ export default function FeedPage() {
   return (
     <section className="page-grid social-page">
       <div className="page-column page-column-main feed-column">
-        <div className="hero-card social-hero-card">
-          <div>
-            <p className="eyebrow">Feed principal</p>
-            <h1>Scroll infinito, posts sociais e cara de rede social de verdade.</h1>
-            <p className="hero-copy">
-              Fotos e videos publicados nos picos entram aqui em ordem viva, com curtidas,
-              comentarios e autoplay quando o post entra em foco.
-            </p>
-          </div>
-          <div className="inline-actions wrap-actions">
+        <div className="toolbar-card compact-page-header">
+          <div className="section-title compact-section-title">
+            <div>
+              <p className="eyebrow">Comunidade</p>
+              <h1>Feed</h1>
+            </div>
             <button
               className="primary-button small-link-button"
               onClick={() => {
-                setShowComposer((current) => !current)
+                const nextVisible = !showComposer
+                setShowComposer(nextVisible)
                 setSearchParams((current) => {
                   const next = new URLSearchParams(current)
-                  if (showComposer) next.delete('compose')
+                  if (!nextVisible) next.delete('compose')
                   else next.set('compose', '1')
                   return next
                 })
@@ -205,17 +202,16 @@ export default function FeedPage() {
             >
               {showComposer ? 'Fechar criacao' : 'Nova publicacao'}
             </button>
-            <div className="highlight-chip">
-              <strong>{items.length}</strong> posts carregados
-            </div>
+          </div>
+          <div className="chip-row compact-chip-row">
+            <span className="status-pill">{items.length} posts</span>
           </div>
         </div>
 
         {showComposer ? (
           <div className="side-card compose-card">
-            <div className="section-title">
+            <div className="section-title compact-section-title">
               <h2>Novo post</h2>
-              <span>topo do feed</span>
             </div>
 
             {user ? (

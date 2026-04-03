@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { apiRequest } from '../api'
 import { useAuth } from '../auth'
 import MediaAsset from '../components/MediaAsset'
@@ -12,6 +12,8 @@ function formatTime(value) {
 }
 
 export default function ChatsPage() {
+  const [searchParams] = useSearchParams()
+  const preferredConversationId = searchParams.get('conversation') || ''
   const { user, token } = useAuth()
   const [following, setFollowing] = useState([])
   const [conversations, setConversations] = useState([])
@@ -56,8 +58,8 @@ export default function ChatsPage() {
 
   useEffect(() => {
     if (!user) return
-    loadInbox()
-  }, [token, user])
+    loadInbox(preferredConversationId)
+  }, [token, user, preferredConversationId])
 
   useEffect(() => {
     if (!user || !selectedConversationId) return undefined
@@ -171,9 +173,6 @@ export default function ChatsPage() {
       <section className="simple-page">
         <div className="side-card">
           <h1>Entre para conversar</h1>
-          <p className="muted-text">
-            A DM agora usa inbox, conversa individual, bolhas de mensagem e contador de mensagens nao lidas.
-          </p>
           <Link className="primary-button small-link-button" to="/entrar">
             Entrar agora
           </Link>
@@ -187,12 +186,17 @@ export default function ChatsPage() {
       <div className="page-column page-column-main">
         <div className="dm-layout">
           <aside className="side-card dm-sidebar">
-            <div className="section-title">
+            <div className="section-title compact-section-title">
               <div>
                 <p className="eyebrow">Inbox</p>
                 <h1>Mensagens</h1>
               </div>
-              <span className="status-pill">{unreadTotal} nao lidas</span>
+              <div className="inline-actions">
+                <span className="status-pill">{unreadTotal} novas</span>
+                <Link className="secondary-button small-link-button" to="/pesquisa">
+                  Nova
+                </Link>
+              </div>
             </div>
 
             <input
@@ -247,16 +251,16 @@ export default function ChatsPage() {
                   </button>
                 ))
               ) : (
-                <p className="muted-text">Nenhuma conversa ainda.</p>
+                <p className="muted-text">Nenhuma conversa.</p>
               )}
             </div>
 
             <div className="section-divider" />
 
-            <div className="section-title">
-                <h2>Seguindo</h2>
-                <span>{filteredFollowing.length}</span>
-              </div>
+            <div className="section-title compact-section-title">
+              <h2>Seguindo</h2>
+              <span>{filteredFollowing.length}</span>
+            </div>
 
             <div className="list-stack compact-list">
               {filteredFollowing.length ? (
@@ -282,11 +286,9 @@ export default function ChatsPage() {
                 ))
               ) : (
                 <div className="empty-state">
-                  <p className="muted-text">
-                    Procure pessoas na aba de pesquisa para seguir e liberar conversas privadas aqui.
-                  </p>
+                  <p className="muted-text">Siga alguem para abrir conversa.</p>
                   <Link className="secondary-button small-link-button full-width" to="/pesquisa">
-                    Ir para pesquisa
+                    Buscar pessoas
                   </Link>
                 </div>
               )}

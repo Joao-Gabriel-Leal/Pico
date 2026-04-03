@@ -66,6 +66,17 @@ create table if not exists user_follow (
   check (follower_id <> following_id)
 );
 
+create table if not exists app_notification (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references app_user(id) on delete cascade,
+  actor_user_id uuid not null references app_user(id) on delete cascade,
+  kind text not null check (kind in ('follow', 'media_like', 'media_comment', 'dm_message')),
+  entity_id uuid,
+  text_preview text default '',
+  created_at timestamptz not null default now(),
+  read_at timestamptz
+);
+
 create table if not exists auth_session (
   token text primary key,
   user_id uuid not null references app_user(id) on delete cascade,
@@ -224,6 +235,8 @@ alter table direct_conversation_participant add column if not exists last_read_a
 create index if not exists permission_key_idx on permission (key);
 create index if not exists user_role_role_id_idx on user_role (role_id);
 create index if not exists user_follow_following_id_idx on user_follow (following_id);
+create index if not exists app_notification_user_created_at_idx on app_notification (user_id, created_at desc);
+create index if not exists app_notification_user_read_at_idx on app_notification (user_id, read_at);
 create index if not exists auth_session_user_id_idx on auth_session (user_id);
 create index if not exists pico_created_at_idx on pico (created_at desc);
 create index if not exists pico_location_idx on pico (latitude, longitude);

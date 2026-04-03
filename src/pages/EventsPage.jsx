@@ -136,17 +136,12 @@ export default function EventsPage() {
   return (
     <section className="page-grid social-page">
       <div className="page-column page-column-main feed-column">
-        <div className="hero-card social-hero-card">
-          <div>
-            <p className="eyebrow">Eventos e campeonatos</p>
-            <h1>Uma agenda viva dos picos, ordenada pelo que esta mais perto de voce.</h1>
-            <p className="hero-copy">
-              Cada card agora mostra o pico associado, data, premio e distancia quando sua
-              localizacao estiver disponivel.
-            </p>
-          </div>
-
-          <div className="inline-actions wrap-actions">
+        <div className="toolbar-card compact-page-header">
+          <div className="section-title compact-section-title">
+            <div>
+              <p className="eyebrow">Agenda</p>
+              <h1>Eventos</h1>
+            </div>
             <button
               className="primary-button small-link-button"
               onClick={() => {
@@ -162,35 +157,24 @@ export default function EventsPage() {
             >
               {showComposer ? 'Fechar criacao' : 'Novo evento'}
             </button>
-
-            <div className="stats-stack inline-stats">
-              <article>
-                <span>Eventos</span>
-                <strong>{totals.total}</strong>
-              </article>
-              <article>
-                <span>Esportes</span>
-                <strong>{totals.sports}</strong>
-              </article>
-              <article>
-                <span>Premiacao</span>
-                <strong>
-                  {new Intl.NumberFormat('pt-BR', {
-                    style: 'currency',
-                    currency: 'BRL',
-                    maximumFractionDigits: 0,
-                  }).format(totals.prizePoolCents / 100)}
-                </strong>
-              </article>
-            </div>
+          </div>
+          <div className="chip-row compact-chip-row">
+            <span className="status-pill">{totals.total} eventos</span>
+            <span className="status-pill">{totals.sports} esportes</span>
+            <span className="status-pill">
+              {new Intl.NumberFormat('pt-BR', {
+                style: 'currency',
+                currency: 'BRL',
+                maximumFractionDigits: 0,
+              }).format(totals.prizePoolCents / 100)}
+            </span>
           </div>
         </div>
 
         {showComposer ? (
           <div className="side-card compose-card" ref={composerRef}>
-            <div className="section-title">
+            <div className="section-title compact-section-title">
               <h2>{user?.permissions?.includes('event.approve') ? 'Criar evento' : 'Sugerir evento'}</h2>
-              <span>topo da agenda</span>
             </div>
 
             {user ? (
@@ -304,7 +288,7 @@ export default function EventsPage() {
 
               <div className="post-card-media post-card-media-muted">
                 <MediaAsset
-                  className="cover-thumb"
+                  className="cover-thumb small-cover-thumb"
                   src={item.pico?.previewPhoto}
                   alt={item.pico?.name || item.title}
                 />

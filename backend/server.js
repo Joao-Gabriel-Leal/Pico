@@ -240,6 +240,19 @@ app.get('/api/people/:userId', async (request, response) => {
   response.json(item)
 })
 
+app.get('/api/notifications', requireAuth, async (request, response) => {
+  response.json(await repository.listNotifications(request.currentUser.id))
+})
+
+app.post('/api/notifications/read', requireAuth, async (request, response) => {
+  response.json(
+    await repository.markNotificationsRead(
+      request.currentUser.id,
+      request.body.notificationId || null,
+    ),
+  )
+})
+
 app.get('/api/moderation', requireAuth, async (request, response) => {
   try {
     response.json(await repository.listModerationQueue(request.currentUser.id))

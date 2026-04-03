@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { apiRequest } from '../api'
 import { useAuth } from '../auth'
 import MediaAsset from '../components/MediaAsset'
 
 export default function SearchPage() {
+  const navigate = useNavigate()
   const { user, token, refreshUser } = useAuth()
   const [searchText, setSearchText] = useState('')
   const [people, setPeople] = useState([])
@@ -74,14 +75,14 @@ export default function SearchPage() {
     setMessage('')
 
     try {
-      await apiRequest('/api/dms', {
+      const payload = await apiRequest('/api/dms', {
         method: 'POST',
         token,
         body: {
           recipientUserId: targetUserId,
         },
       })
-      setMessage('Conversa aberta na aba de DM.')
+      navigate(`/conversas?conversation=${payload.conversation.id}`)
     } catch (nextError) {
       setError(nextError.message)
     } finally {
@@ -93,10 +94,7 @@ export default function SearchPage() {
     return (
       <section className="simple-page">
         <div className="side-card">
-          <h1>Entre para pesquisar pessoas</h1>
-          <p className="muted-text">
-            A busca serve para achar perfis do app, seguir e abrir conversa.
-          </p>
+          <h1>Entre para buscar pessoas</h1>
           <Link className="primary-button small-link-button" to="/entrar">
             Entrar agora
           </Link>
@@ -108,22 +106,20 @@ export default function SearchPage() {
   return (
     <section className="page-grid social-page">
       <div className="page-column page-column-main feed-column">
-        <div className="hero-card social-hero-card">
-          <div>
-            <p className="eyebrow">Pesquisar pessoas</p>
-            <h1>Encontre usuarios do app para seguir, ver perfil e puxar conversa.</h1>
-            <p className="hero-copy">
-              Essa aba agora centraliza descoberta da comunidade antes da DM e do feed.
-            </p>
+        <div className="toolbar-card compact-page-header">
+          <div className="section-title compact-section-title">
+            <div>
+              <p className="eyebrow">Comunidade</p>
+              <h1>Buscar</h1>
+            </div>
+            <span className="status-pill">{filteredPeople.length}</span>
           </div>
-
           <div className="search-input-shell">
             <input
               value={searchText}
               onChange={(event) => setSearchText(event.target.value)}
-              placeholder="Buscar por nome, usuario ou bio"
+              placeholder="Nome, usuario ou bio"
             />
-            <span className="status-pill">{filteredPeople.length} resultados</span>
           </div>
         </div>
 
@@ -134,9 +130,9 @@ export default function SearchPage() {
         <div className="list-stack">
           {filteredPeople.length ? (
             filteredPeople.map((person) => (
-              <article key={person.id} className="post-card search-result-card">
-                <div className="post-card-header">
-                  <div className="user-chip">
+              <article key={person.id} className="post-card search-result-card compact-search-card">
+                <Link className="search-result-main" to={`/pessoas/${person.id}`}>
+                  <div className="user-chip search-user-chip">
                     {person.avatarUrl ? (
                       <MediaAsset className="avatar-circle avatar-mini" src={person.avatarUrl} alt={person.displayName} />
                     ) : (
@@ -145,51 +141,43 @@ export default function SearchPage() {
                     <div>
                       <strong>{person.displayName}</strong>
                       <p>@{person.username}</p>
+                      {person.bio ? <span className="person-bio-line">{person.bio}</span> : null}
                     </div>
                   </div>
-                  <span className="status-pill">{person.mediaCount} posts</span>
-                </div>
-
-                <div className="post-card-body">
-                  <p>{person.bio || 'Sem bio ainda.'}</p>
-                  <div className="meta-row wrap-actions">
-                    <span>{person.followerCount} seguidores</span>
-                    <span>{person.followingCount} seguindo</span>
-                    {person.isFollowing ? <span className="pill">Voce segue</span> : null}
+                  <div className="search-result-meta">
+                    <span>{person.mediaCount} posts</span>
+                    <span>{person.followerCount} seg</span>
                   </div>
+                </Link>
+
+                <div className="search-result-actions">
+                  <button
+                    className={person.isFollowing ? 'secondary-button small-link-button' : 'primary-button small-link-button'}
+                    type="button"
+                    disabled={busyUserId === person.id}
+                    onClick={() => handleToggleFollow(person.id)}
+                  >
+                    {busyUserId === person.id ? '...' : person.isFollowing ? 'Seguindo' : 'Seguir'}
+                  </button>
+                  <button
+                    className="secondary-button small-link-button"
+                    type="button"
+                    disabled={busyUserId === person.id}
+                    onClick={() => handleMessage(person.id)}
+                  >
+                    DM
+                  </button>
                 </div>
 
-                <div className="post-card-footer">
-                  <div className="chip-row">
-                    {(person.favoriteSports || []).slice(0, 3).map((sport) => (
+                {(person.favoriteSports || []).length ? (
+                  <div className="chip-row compact-chip-row">
+                    {(person.favoriteSports || []).slice(0, 2).map((sport) => (
                       <span key={sport.id} className="pill">
                         {sport.name}
                       </span>
                     ))}
                   </div>
-
-                  <div className="inline-actions wrap-actions">
-                    <Link className="secondary-button small-link-button" to={`/pessoas/${person.id}`}>
-                      Perfil
-                    </Link>
-                    <button
-                      className={person.isFollowing ? 'secondary-button small-link-button' : 'primary-button small-link-button'}
-                      type="button"
-                      disabled={busyUserId === person.id}
-                      onClick={() => handleToggleFollow(person.id)}
-                    >
-                      {busyUserId === person.id ? 'Aguarde...' : person.isFollowing ? 'Seguindo' : 'Seguir'}
-                    </button>
-                    <button
-                      className="secondary-button small-link-button"
-                      type="button"
-                      disabled={busyUserId === person.id}
-                      onClick={() => handleMessage(person.id)}
-                    >
-                      Mensagem
-                    </button>
-                  </div>
-                </div>
+                ) : null}
               </article>
             ))
           ) : (

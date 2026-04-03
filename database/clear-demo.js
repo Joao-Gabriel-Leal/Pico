@@ -117,6 +117,7 @@ async function clearDatabase() {
 
   await withTransaction(async (client) => {
     await client.query('delete from auth_session')
+    await client.query('delete from app_notification')
     await client.query('delete from direct_message')
     await client.query('delete from direct_conversation_participant')
     await client.query('delete from direct_conversation')
