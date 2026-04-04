@@ -13,6 +13,15 @@ function shouldUseSameOrigin() {
 }
 
 function getApiBaseUrl() {
+  if (typeof window !== 'undefined') {
+    const { hostname } = window.location
+    const isLocalhost = hostname === '127.0.0.1' || hostname === 'localhost'
+
+    if (!isLocalhost && configuredApiBaseUrl) {
+      return configuredApiBaseUrl
+    }
+  }
+
   return shouldUseSameOrigin() ? '' : configuredApiBaseUrl
 }
 

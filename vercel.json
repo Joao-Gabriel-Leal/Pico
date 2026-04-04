@@ -1,6 +1,6 @@
 {
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://lovers-philadelphia-builds-maintaining.trycloudflare.com/api/:path*" },
+    { "source": "/api/:path*", "destination": "https://picomap-api.onrender.com/api/:path*" },
     { "source": "/entrar", "destination": "/index.html" },
     { "source": "/explorar", "destination": "/index.html" },
     { "source": "/mapa", "destination": "/index.html" },
