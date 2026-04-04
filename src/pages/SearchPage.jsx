@@ -136,7 +136,7 @@ export default function SearchPage() {
 
               <div className="search-person-copy">
                 <strong>{getDisplayName(person.displayName)}</strong>
-                <p>@{person.username || 'picomap'}</p>
+                <p>@{person.username || 'picohunter'}</p>
               </div>
             </Link>
 

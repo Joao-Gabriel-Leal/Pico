@@ -140,7 +140,7 @@ export default function EventsPage() {
         <div className="toolbar-card compact-page-header">
           <div className="section-title compact-section-title">
             <div>
-              <p className="eyebrow">PicoMap</p>
+              <p className="eyebrow">PicoHunter</p>
               <h1>Eventos</h1>
             </div>
             <button

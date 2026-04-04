@@ -392,7 +392,7 @@ export default function ChatsPage() {
                             <img className="shared-message-thumb" src={item.sharedMedia.fileUrl} alt={item.sharedMedia.title} />
                           )}
                           <div className="shared-message-copy">
-                            <strong>{item.sharedMedia.author?.username || getDisplayName(item.sharedMedia.author?.displayName, 'picomap')}</strong>
+                            <strong>{item.sharedMedia.author?.username || getDisplayName(item.sharedMedia.author?.displayName, 'picohunter')}</strong>
                             <span>{item.sharedMedia.title}</span>
                             <small>{item.sharedMedia.pico.name}</small>
                           </div>
@@ -475,7 +475,7 @@ export default function ChatsPage() {
                     )}
                     <div>
                       <strong>{getDisplayName(person.displayName)}</strong>
-                      <p>@{person.username || 'picomap'}</p>
+                      <p>@{person.username || 'picohunter'}</p>
                     </div>
                   </div>
                   <span className={groupParticipants.includes(person.id) ? 'status-pill active-share-pill' : 'status-pill'}>

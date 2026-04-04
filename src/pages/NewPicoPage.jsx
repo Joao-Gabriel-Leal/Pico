@@ -211,7 +211,7 @@ export default function NewPicoPage() {
       <div className="side-card">
         <div className="section-title">
           <div>
-            <p className="eyebrow">PicoMap</p>
+            <p className="eyebrow">PicoHunter</p>
             <h1>Novo pico</h1>
           </div>
           <button className="secondary-button" onClick={useCurrentLocation} type="button">

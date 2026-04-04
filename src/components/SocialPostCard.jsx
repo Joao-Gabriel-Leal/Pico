@@ -129,7 +129,7 @@ export default function SocialPostCard({
       if (navigator.share) {
         await navigator.share({
           title: localItem.title,
-          text: `Olha esse post do ${localItem.pico?.name || 'PicoMap'}`,
+          text: `Olha esse drop do ${localItem.pico?.name || 'PicoHunter'}`,
           url: shareUrl,
         })
         setMessage('Compartilhado.')
@@ -160,7 +160,7 @@ export default function SocialPostCard({
               <div>
                 <strong>{getDisplayName(localItem.author?.displayName, 'Comunidade')}</strong>
                 <p>
-                  @{localItem.author?.username || 'picomap'} - {formatDate(localItem.createdAt)}
+                  @{localItem.author?.username || 'picohunter'} - {formatDate(localItem.createdAt)}
                 </p>
               </div>
             </Link>
@@ -254,6 +254,11 @@ export default function SocialPostCard({
             ) : null}
           </div>
 
+          <div className="post-spot-row">
+            {localItem.pico?.name ? <span className="status-pill">{localItem.pico.name}</span> : null}
+            {localItem.distanceLabel ? <span className="status-pill">{localItem.distanceLabel}</span> : null}
+          </div>
+
           <strong>{localItem.likesCount} curtidas</strong>
           {Array.isArray(localItem.likedBy) && localItem.likedBy.length ? (
             <p className="liked-by-line">
@@ -267,7 +272,7 @@ export default function SocialPostCard({
             </p>
           ) : null}
           <p className="post-caption-line">
-            <strong>{localItem.author?.username || localItem.author?.displayName || 'picomap'}</strong>{' '}
+            <strong>{localItem.author?.username || localItem.author?.displayName || 'picohunter'}</strong>{' '}
             {localItem.title}
           </p>
           {(localItem.commentsCount || localItem.comments?.length || 0) ? (

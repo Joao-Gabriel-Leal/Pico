@@ -141,7 +141,7 @@ export default function ProfilePage() {
       if (navigator.share) {
         await navigator.share({
           title: form.displayName || user.displayName,
-          text: `Perfil no PicoMap`,
+          text: `Perfil no PicoHunter`,
           url,
         })
       } else {

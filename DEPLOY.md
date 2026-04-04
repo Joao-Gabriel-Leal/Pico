@@ -1,4 +1,4 @@
-# Deploy de Demo do PicoMap
+# Deploy de Demo do PicoHunter
 
 ## Stack recomendada
 - Frontend: Vercel Hobby
@@ -15,11 +15,11 @@
 ## Variaveis do backend
 - `DATABASE_URL`
 - `DATABASE_SSL=true`
-- `APP_NAME=PicoMap`
+- `APP_NAME=PicoHunter`
 - `CLOUDINARY_CLOUD_NAME`
 - `CLOUDINARY_API_KEY`
 - `CLOUDINARY_API_SECRET`
-- Opcional: `CLOUDINARY_UPLOAD_FOLDER=picomap/demo`
+- Opcional: `CLOUDINARY_UPLOAD_FOLDER=picohunter/demo`
 
 ## Variaveis do frontend na Vercel
 - `VITE_API_BASE_URL=https://seu-app.onrender.com`

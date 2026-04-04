@@ -5,6 +5,7 @@ import {
   MapContainer,
   Marker,
   Popup,
+  Polyline,
   TileLayer,
   useMap,
   useMapEvents,
@@ -13,13 +14,38 @@ import L from 'leaflet'
 import { apiRequest } from '../api'
 import { useAuth } from '../auth'
 import MediaAsset from '../components/MediaAsset'
+import RouteMapPreview from '../components/RouteMapPreview'
 import { distanceBetween, getCurrentPosition } from '../utils/geo'
-import { getStoredLocation, hasLocationAutoRequested, markLocationAutoRequested } from '../utils/location-cache'
+import {
+  getStoredLocation,
+  hasLocationAutoRequested,
+  markLocationAutoRequested,
+} from '../utils/location-cache'
+import {
+  formatRouteDistance,
+  formatRouteDuration,
+  getRouteCenter,
+  getRouteDistanceFromLocation,
+  getRouteSportOptions,
+  isRouteWithinBounds,
+  listStoredRoutes,
+  routeUpdateEvent,
+} from '../utils/routes'
 
 const defaultCenter = [-23.55052, -46.633308]
 const markerPalette = ['orange', 'blue', 'green', 'gold', 'violet', 'red']
 
-function MapViewportController({ viewportRequest, onBoundsChange, onManualMove, onMapPick }) {
+function formatDistance(distanceKm) {
+  if (distanceKm === null) return ''
+  return `${distanceKm.toFixed(1)} km`
+}
+
+function MapViewportController({
+  viewportRequest,
+  onBoundsChange,
+  onManualMove,
+  onMapPick,
+}) {
   const map = useMap()
 
   useEffect(() => {
@@ -71,9 +97,9 @@ function makeMarker(color) {
 
 const userIcon = L.divIcon({
   className: '',
-  html: '<div class="map-user-pill"><span>Voce esta aqui</span></div>',
-  iconSize: [116, 34],
-  iconAnchor: [58, 42],
+  html: '<div class="map-user-pill"><span>Sua crew ta aqui</span></div>',
+  iconSize: [140, 34],
+  iconAnchor: [70, 42],
 })
 
 const createSpotIcon = L.divIcon({
@@ -88,10 +114,14 @@ export default function ExplorePage() {
   const { user, token } = useAuth()
   const initialLocation = user?.location || getStoredLocation() || null
   const autoLocateRef = useRef(false)
+  const hasManualMapMoveRef = useRef(false)
   const [sports, setSports] = useState([])
   const [items, setItems] = useState([])
+  const [routes, setRoutes] = useState(() => listStoredRoutes())
+  const [layerFilter, setLayerFilter] = useState('all')
   const [activeSport, setActiveSport] = useState('all')
   const [selectedSlug, setSelectedSlug] = useState('')
+  const [selectedRouteId, setSelectedRouteId] = useState('')
   const [userPosition, setUserPosition] = useState(initialLocation)
   const [pickedLocation, setPickedLocation] = useState(null)
   const [loadingLocation, setLoadingLocation] = useState(false)
@@ -105,10 +135,21 @@ export default function ExplorePage() {
   })
 
   useEffect(() => {
+    function handleRoutesUpdated() {
+      setRoutes(listStoredRoutes())
+    }
+
+    window.addEventListener(routeUpdateEvent, handleRoutesUpdated)
+    return () => window.removeEventListener(routeUpdateEvent, handleRoutesUpdated)
+  }, [])
+
+  useEffect(() => {
     const nextLocation = user?.location || getStoredLocation() || null
     if (!nextLocation) return
 
     setUserPosition(nextLocation)
+    if (hasManualMapMoveRef.current) return
+
     setViewportRequest((current) => {
       if (
         current.center?.[0] === nextLocation.latitude &&
@@ -172,6 +213,27 @@ export default function ExplorePage() {
     loadPicos()
   }, [activeSport, bounds, token])
 
+  const availableSports = useMemo(() => {
+    const baseSports = sports.map((sport) => ({
+      id: sport.id,
+      slug: sport.slug,
+      name: sport.name,
+    }))
+    const known = new Set(baseSports.map((sport) => sport.slug))
+
+    for (const routeSport of getRouteSportOptions()) {
+      if (!known.has(routeSport.slug)) {
+        baseSports.push({
+          id: `route-${routeSport.slug}`,
+          slug: routeSport.slug,
+          name: routeSport.name,
+        })
+      }
+    }
+
+    return baseSports
+  }, [sports])
+
   const itemsWithDistance = useMemo(() => {
     return [...items]
       .map((item) => ({
@@ -183,6 +245,7 @@ export default function ExplorePage() {
             })
           : null,
       }))
+      .filter((item) => activeSport === 'all' || item.sport?.slug === activeSport)
       .sort((left, right) => {
         if (left.distanceKm === null && right.distanceKm === null) {
           return right.voteCount - left.voteCount
@@ -191,11 +254,42 @@ export default function ExplorePage() {
         if (right.distanceKm === null) return -1
         return left.distanceKm - right.distanceKm
       })
-  }, [items, userPosition])
+  }, [activeSport, items, userPosition])
+
+  const routesInBounds = useMemo(() => {
+    return routes
+      .filter((route) => isRouteWithinBounds(route, bounds))
+      .filter((route) => activeSport === 'all' || route.sport === activeSport)
+      .map((route) => ({
+        ...route,
+        distanceKm: getRouteDistanceFromLocation(route, userPosition),
+        center: getRouteCenter(route),
+      }))
+      .sort((left, right) => {
+        if (left.distanceKm === null && right.distanceKm === null) {
+          return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+        }
+        if (left.distanceKm === null) return 1
+        if (right.distanceKm === null) return -1
+        return left.distanceKm - right.distanceKm
+      })
+  }, [activeSport, bounds, routes, userPosition])
+
+  useEffect(() => {
+    setSelectedRouteId((current) => {
+      if (routesInBounds.some((route) => route.id === current)) return current
+      return routesInBounds[0]?.id || ''
+    })
+  }, [routesInBounds])
 
   const selectedPico = useMemo(
     () => itemsWithDistance.find((item) => item.slug === selectedSlug) ?? itemsWithDistance[0] ?? null,
     [itemsWithDistance, selectedSlug],
+  )
+
+  const selectedRoute = useMemo(
+    () => routesInBounds.find((route) => route.id === selectedRouteId) ?? routesInBounds[0] ?? null,
+    [routesInBounds, selectedRouteId],
   )
 
   async function focusExactLocation({ silent = false } = {}) {
@@ -212,7 +306,8 @@ export default function ExplorePage() {
         zoom: 15,
         key: `${location.latitude}-${location.longitude}-${Date.now()}`,
       })
-      setStatusMessage(silent ? '' : 'Localizacao atualizada')
+      hasManualMapMoveRef.current = false
+      setStatusMessage(silent ? '' : 'Mapa centralizado na sua posicao')
     } catch (nextError) {
       setStatusMessage(silent ? '' : nextError.message)
     } finally {
@@ -223,31 +318,49 @@ export default function ExplorePage() {
   return (
     <section className="page-grid">
       <div className="page-column page-column-main">
-        <div className="toolbar-card compact-page-header">
+        <div className="hero-card map-hero-card">
           <div className="section-title compact-section-title">
             <div>
-              <p className="eyebrow">PicoMap</p>
+              <p className="eyebrow">PicoHunter</p>
               <h1>Mapa</h1>
             </div>
-            <button className="secondary-button" onClick={focusExactLocation} disabled={loadingLocation}>
-              {loadingLocation ? 'Centralizando...' : 'Centralizar'}
-            </button>
-            <Link className="primary-button small-link-button" to="/novo-pico">
-              Marcar novo pico
-            </Link>
+            <div className="inline-actions wrap-actions">
+              <button className="secondary-button" onClick={() => focusExactLocation()} disabled={loadingLocation}>
+                {loadingLocation ? 'Centralizando...' : 'Minha posicao'}
+              </button>
+              <Link className="secondary-button small-link-button" to="/nova-rota">
+                Nova rota
+              </Link>
+              <Link className="primary-button small-link-button" to="/novo-pico">
+                Novo pico
+              </Link>
+            </div>
           </div>
+
+          <p className="hero-copy">
+            Descobre spots fixos, visualiza percursos em linha e explora a cidade no seu ritmo.
+          </p>
+
           {statusMessage ? <span className="toolbar-helper-text">{statusMessage}</span> : null}
         </div>
 
         <div className="toolbar-card">
           <div className="chip-row">
-            <button
-              className={activeSport === 'all' ? 'chip active' : 'chip'}
-              onClick={() => setActiveSport('all')}
-            >
-              Todos
+            <button className={layerFilter === 'all' ? 'chip active' : 'chip'} onClick={() => setLayerFilter('all')}>
+              Tudo
             </button>
-            {sports.map((sport) => (
+            <button className={layerFilter === 'picos' ? 'chip active' : 'chip'} onClick={() => setLayerFilter('picos')}>
+              Picos
+            </button>
+            <button className={layerFilter === 'routes' ? 'chip active' : 'chip'} onClick={() => setLayerFilter('routes')}>
+              Rotas
+            </button>
+          </div>
+          <div className="chip-row">
+            <button className={activeSport === 'all' ? 'chip active' : 'chip'} onClick={() => setActiveSport('all')}>
+              Todos esportes
+            </button>
+            {availableSports.map((sport) => (
               <button
                 key={sport.id}
                 className={activeSport === sport.slug ? 'chip active' : 'chip'}
@@ -262,10 +375,14 @@ export default function ExplorePage() {
         <div className="map-card">
           <div className="map-card-header">
             <div>
-              <strong>Mapa principal</strong>
-              <p>{loadingPicos ? 'Atualizando...' : 'Toque para marcar um ponto.'}</p>
+              <strong>Exploracao livre</strong>
+              <p>
+                Arraste, aproxime e descubra. O mapa respeita seu movimento sem voltar sozinho.
+              </p>
             </div>
-            <span className="status-pill">{loadingPicos ? 'atualizando picos' : `${items.length} picos`}</span>
+            <span className="status-pill">
+              {itemsWithDistance.length} picos • {routesInBounds.length} rotas
+            </span>
           </div>
 
           <div className="leaflet-shell">
@@ -283,12 +400,13 @@ export default function ExplorePage() {
               <MapViewportController
                 viewportRequest={viewportRequest}
                 onBoundsChange={setBounds}
-                onManualMove={() =>
+                onManualMove={() => {
+                  hasManualMapMoveRef.current = true
                   setStatusMessage('')
-                }
+                }}
                 onMapPick={(location) => {
                   setPickedLocation(location)
-                  setStatusMessage('Ponto marcado')
+                  setStatusMessage('Ponto novo marcado no mapa.')
                 }}
               />
 
@@ -297,7 +415,7 @@ export default function ExplorePage() {
                   <CircleMarker
                     center={[userPosition.latitude, userPosition.longitude]}
                     radius={10}
-                    pathOptions={{ color: '#2563eb', fillColor: '#2563eb', fillOpacity: 0.12 }}
+                    pathOptions={{ color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.16 }}
                     interactive={false}
                   />
                   <Marker
@@ -316,7 +434,7 @@ export default function ExplorePage() {
                   zIndexOffset={900}
                 >
                   <Popup>
-                    <strong>Criar pico aqui</strong>
+                    <strong>Marcar novo pico aqui</strong>
                     <br />
                     <Link
                       className="text-link"
@@ -328,30 +446,55 @@ export default function ExplorePage() {
                 </Marker>
               ) : null}
 
-              {itemsWithDistance.map((item, index) => (
-                <Marker
-                  key={item.id}
-                  position={[item.latitude, item.longitude]}
-                  icon={makeMarker(markerPalette[index % markerPalette.length])}
-                  zIndexOffset={1200}
-                  eventHandlers={{
-                    click: () => navigate(`/picos/${item.slug}`),
-                  }}
-                >
-                  <Popup>
-                    <strong>{item.name}</strong>
-                    <br />
-                    {item.sport.name} - {item.voteCount} votos
-                    <br />
-                    <Link className="text-link" to={`/picos/${item.slug}`}>
-                      Abrir perfil do pico
-                    </Link>
-                  </Popup>
-                </Marker>
-              ))}
+              {layerFilter !== 'routes'
+                ? itemsWithDistance.map((item, index) => (
+                    <Marker
+                      key={item.id}
+                      position={[item.latitude, item.longitude]}
+                      icon={makeMarker(markerPalette[index % markerPalette.length])}
+                      zIndexOffset={1200}
+                      eventHandlers={{
+                        click: () => {
+                          setSelectedSlug(item.slug)
+                        },
+                      }}
+                    >
+                      <Popup>
+                        <strong>{item.name}</strong>
+                        <br />
+                        {item.sport.name} • {item.voteCount} votos
+                        <br />
+                        <Link className="text-link" to={`/picos/${item.slug}`}>
+                          Abrir pico
+                        </Link>
+                      </Popup>
+                    </Marker>
+                  ))
+                : null}
+
+              {layerFilter !== 'picos'
+                ? routesInBounds.map((route) => (
+                    <Polyline
+                      key={route.id}
+                      positions={route.points.map((point) => [point.latitude, point.longitude])}
+                      pathOptions={{
+                        color: route.sportMeta?.color,
+                        weight: route.id === selectedRoute?.id ? 7 : 5,
+                        opacity: route.id === selectedRoute?.id ? 1 : 0.74,
+                        lineCap: 'round',
+                        lineJoin: 'round',
+                      }}
+                      eventHandlers={{
+                        click: () => {
+                          setSelectedRouteId(route.id)
+                        },
+                      }}
+                    />
+                  ))
+                : null}
             </MapContainer>
 
-            <button className="map-fab" onClick={focusExactLocation} disabled={loadingLocation}>
+            <button className="map-fab" onClick={() => focusExactLocation()} disabled={loadingLocation}>
               {loadingLocation ? 'Centralizando...' : 'Centralizar'}
             </button>
           </div>
@@ -360,7 +503,7 @@ export default function ExplorePage() {
         {pickedLocation ? (
           <div className="side-card spot-sheet">
             <div className="section-title compact-section-title">
-              <h2>Novo pico aqui</h2>
+              <h2>Novo pico nesse ponto</h2>
             </div>
             <div className="inline-actions wrap-actions">
               <Link
@@ -370,7 +513,7 @@ export default function ExplorePage() {
                 Criar pico aqui
               </Link>
               <button className="secondary-button small-link-button" type="button" onClick={() => setPickedLocation(null)}>
-                Limpar ponto
+                Limpar marcador
               </button>
             </div>
           </div>
@@ -378,62 +521,120 @@ export default function ExplorePage() {
       </div>
 
       <aside className="page-column rail-column">
-        <div className="side-card sticky-card">
-          <div className="section-title compact-section-title">
-            <h2>Picos na area</h2>
-            <span>{itemsWithDistance.length}</span>
-          </div>
+        {layerFilter !== 'routes' ? (
+          <div className="side-card sticky-card">
+            <div className="section-title compact-section-title">
+              <h2>Picos na area</h2>
+              <span>{itemsWithDistance.length}</span>
+            </div>
 
-          {selectedPico ? (
-            <article className="mini-card pico-preview-card">
-              <MediaAsset
-                className="cover-thumb small-cover-thumb"
-                src={selectedPico.previewPhoto || selectedPico.coverImageUrl}
-                alt={selectedPico.name}
-                expandable
-              />
-              <div className="mini-card-body">
-                <strong>{selectedPico.name}</strong>
-                <p>{selectedPico.description}</p>
-                <div className="meta-row">
-                  <span>{selectedPico.sport.name}</span>
-                  <span>{selectedPico.voteCount} votos</span>
-                  {selectedPico.distanceKm !== null ? <span>{selectedPico.distanceKm.toFixed(1)} km</span> : null}
+            {selectedPico ? (
+              <article className="mini-card pico-preview-card">
+                <MediaAsset
+                  className="cover-thumb small-cover-thumb"
+                  src={selectedPico.previewPhoto || selectedPico.coverImageUrl}
+                  alt={selectedPico.name}
+                  expandable
+                />
+                <div className="mini-card-body">
+                  <strong>{selectedPico.name}</strong>
+                  <p>{selectedPico.description}</p>
+                  <div className="meta-row">
+                    <span>{selectedPico.sport.name}</span>
+                    <span>{selectedPico.voteCount} votos</span>
+                    {selectedPico.distanceKm !== null ? <span>{selectedPico.distanceKm.toFixed(1)} km</span> : null}
+                  </div>
+                  <Link className="primary-button small-link-button full-width" to={`/picos/${selectedPico.slug}`}>
+                    Abrir perfil do pico
+                  </Link>
                 </div>
-                <Link className="primary-button small-link-button full-width" to={`/picos/${selectedPico.slug}`}>
-                  Abrir perfil do pico
-                </Link>
-              </div>
-            </article>
-          ) : (
-            <p className="muted-text">Nenhum pico visivel neste recorte.</p>
-          )}
+              </article>
+            ) : (
+              <p className="muted-text">Nenhum pico visivel nesse recorte.</p>
+            )}
 
-          <div className="section-divider" />
+            <div className="section-divider" />
 
-          <div className="list-stack compact-list">
-            {itemsWithDistance.map((item) => (
-              <button
-                key={item.id}
-                className={item.slug === selectedSlug ? 'list-item active' : 'list-item'}
-                onClick={() => {
-                  setSelectedSlug(item.slug)
-                  setViewportRequest({
-                    center: [item.latitude, item.longitude],
-                    zoom: 15,
-                    key: `${item.slug}-${Date.now()}`,
-                  })
-                }}
-              >
-                <div>
-                  <strong>{item.name}</strong>
-                  <p>{item.sport.name}</p>
-                </div>
-                <span>{item.distanceKm !== null ? `${item.distanceKm.toFixed(1)} km` : `${item.voteCount} votos`}</span>
-              </button>
-            ))}
+            <div className="list-stack compact-list">
+              {itemsWithDistance.map((item) => (
+                <button
+                  key={item.id}
+                  className={item.slug === selectedSlug ? 'list-item active' : 'list-item'}
+                  onClick={() => {
+                    setSelectedSlug(item.slug)
+                    setViewportRequest({
+                      center: [item.latitude, item.longitude],
+                      zoom: 15,
+                      key: `${item.slug}-${Date.now()}`,
+                    })
+                  }}
+                >
+                  <div>
+                    <strong>{item.name}</strong>
+                    <p>{item.sport.name}</p>
+                  </div>
+                  <span>{item.distanceKm !== null ? `${item.distanceKm.toFixed(1)} km` : `${item.voteCount} votos`}</span>
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        ) : null}
+
+        {layerFilter !== 'picos' ? (
+          <div className="side-card sticky-card route-rail-card">
+            <div className="section-title compact-section-title">
+              <h2>Rotas urbanas</h2>
+              <span>{routesInBounds.length}</span>
+            </div>
+
+            {selectedRoute ? (
+              <article className="route-rail-preview">
+                <RouteMapPreview points={selectedRoute.points} color={selectedRoute.sportMeta?.color} />
+                <div className="mini-card-body">
+                  <strong>{selectedRoute.name}</strong>
+                  <p>{selectedRoute.description || 'Percurso street salvo pela comunidade do PicoHunter.'}</p>
+                  <div className="meta-row">
+                    <span>{selectedRoute.sportMeta?.name}</span>
+                    <span>{selectedRoute.distanceKm !== null ? `${selectedRoute.distanceKm.toFixed(1)} km` : 'sem distancia'}</span>
+                    <span>{formatRouteDuration(selectedRoute.estimatedMinutes)}</span>
+                  </div>
+                  <Link className="primary-button small-link-button full-width" to={`/rotas/${selectedRoute.id}`}>
+                    Abrir rota
+                  </Link>
+                </div>
+              </article>
+            ) : (
+              <p className="muted-text">Ainda nao existe rota salva nesse recorte.</p>
+            )}
+
+            <div className="section-divider" />
+
+            <div className="list-stack compact-list">
+              {routesInBounds.map((route) => (
+                <button
+                  key={route.id}
+                  className={route.id === selectedRouteId ? 'list-item active' : 'list-item'}
+                  onClick={() => {
+                    setSelectedRouteId(route.id)
+                    if (route.center) {
+                      setViewportRequest({
+                        center: [route.center.latitude, route.center.longitude],
+                        zoom: 14,
+                        key: `${route.id}-${Date.now()}`,
+                      })
+                    }
+                  }}
+                >
+                  <div>
+                    <strong>{route.name}</strong>
+                    <p>{route.sportMeta?.name}</p>
+                  </div>
+                  <span>{route.distanceKm !== null ? `${route.distanceKm.toFixed(1)} km` : 'sem distancia'}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </aside>
     </section>
   )

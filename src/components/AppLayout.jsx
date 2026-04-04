@@ -10,6 +10,7 @@ import {
   MessageIcon,
   PlusIcon,
   ProfileIcon,
+  RouteIcon,
   SearchIcon,
 } from './AppIcons'
 import MediaAsset from './MediaAsset'
@@ -17,10 +18,10 @@ import { getDisplayName, getInitial } from '../utils/text'
 
 const navItems = [
   { to: '/mapa', label: 'Mapa', shortLabel: 'Mapa', Icon: MapIcon },
+  { to: '/feed', label: 'Feed', shortLabel: 'Feed', Icon: FeedIcon },
   { to: '/eventos', label: 'Eventos', shortLabel: 'Agenda', Icon: CalendarIcon },
   { to: '/pesquisa', label: 'Buscar', shortLabel: 'Buscar', Icon: SearchIcon },
   { to: '/conversas', label: 'DM', shortLabel: 'DM', Icon: MessageIcon },
-  { to: '/feed', label: 'Feed', shortLabel: 'Feed', Icon: FeedIcon },
 ]
 
 export default function AppLayout() {
@@ -77,8 +78,9 @@ export default function AppLayout() {
       <aside className="app-sidebar">
         <div className="sidebar-brand">
           <Link className="brand-link" to="/mapa">
-            PicoMap
+            PicoHunter
           </Link>
+          <p className="sidebar-subtitle">Street routes, picos e comunidade em movimento.</p>
         </div>
 
         <nav className="sidebar-nav">
@@ -108,6 +110,9 @@ export default function AppLayout() {
           <button className="secondary-button small-link-button full-width" onClick={() => setShowCreateMenu((current) => !current)}>
             Criar
           </button>
+          <Link className="secondary-button small-link-button full-width" to="/nova-rota">
+            Nova rota
+          </Link>
           <Link className="primary-button small-link-button full-width" to="/novo-pico">
             Novo pico
           </Link>
@@ -127,7 +132,7 @@ export default function AppLayout() {
                 )}
                 <div>
                   <strong>{getDisplayName(user.displayName)}</strong>
-                  <p>@{user.username || 'picomap'}</p>
+                  <p>@{user.username || 'picohunter'}</p>
                 </div>
               </div>
               <button className="ghost-button" onClick={logout}>
@@ -144,9 +149,12 @@ export default function AppLayout() {
 
       <div className="app-main-frame">
         <header className="app-topbar">
-          <Link className="brand-link topbar-brand" to="/mapa">
-            PicoMap
-          </Link>
+          <div className="topbar-brand-shell">
+            <Link className="brand-link topbar-brand" to="/mapa">
+              PicoHunter
+            </Link>
+            <span className="topbar-tagline">Geo social com cara de app street premium</span>
+          </div>
 
           <div className="topbar-actions">
             <button
@@ -182,14 +190,33 @@ export default function AppLayout() {
         {showCreateMenu ? (
           <div className="create-menu-shell">
             <div className="create-menu-card">
+              <Link className="create-menu-link" to="/nova-rota">
+                <div>
+                  <strong>Nova rota</strong>
+                  <p>Desenha no mapa ou grava via GPS</p>
+                </div>
+                <RouteIcon size={18} />
+              </Link>
               <Link className="create-menu-link" to="/feed?compose=1">
-                Nova publicacao
+                <div>
+                  <strong>Nova publicacao</strong>
+                  <p>Dropa foto ou video no feed</p>
+                </div>
+                <FeedIcon size={18} />
               </Link>
               <Link className="create-menu-link" to="/eventos?compose=1">
-                Novo evento
+                <div>
+                  <strong>Novo evento</strong>
+                  <p>Agenda o proximo role da crew</p>
+                </div>
+                <CalendarIcon size={18} />
               </Link>
               <Link className="create-menu-link" to="/novo-pico">
-                Novo pico
+                <div>
+                  <strong>Novo pico</strong>
+                  <p>Marca um spot fixo no mapa</p>
+                </div>
+                <MapIcon size={18} />
               </Link>
             </div>
           </div>
@@ -201,7 +228,26 @@ export default function AppLayout() {
       </div>
 
       <nav className="mobile-nav">
-        {navItems.map((item) => (
+        {navItems.slice(0, 2).map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            className={({ isActive }) => (isActive ? 'mobile-link active' : 'mobile-link')}
+            aria-label={item.label}
+          >
+            <item.Icon size={23} />
+            <span>{item.shortLabel}</span>
+          </NavLink>
+        ))}
+        <button
+          className={showCreateMenu ? 'mobile-create-trigger active' : 'mobile-create-trigger'}
+          type="button"
+          onClick={() => setShowCreateMenu((current) => !current)}
+          aria-label="Abrir menu de criacao"
+        >
+          <PlusIcon size={24} />
+        </button>
+        {navItems.slice(2).map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

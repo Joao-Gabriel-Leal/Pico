@@ -94,13 +94,17 @@ export default function AuthPage() {
       <div className="auth-card">
         <div className="section-title">
           <div>
-            <p className="eyebrow">PicoMap</p>
+            <p className="eyebrow">PicoHunter</p>
             <h1>{mode === 'login' ? 'Entrar' : 'Criar conta'}</h1>
           </div>
           <Link className="text-link" to="/mapa">
             Voltar ao mapa
           </Link>
         </div>
+
+        <p className="hero-copy auth-copy">
+          Rede social geolocalizada para descobrir picos, explorar rotas e conectar pessoas pelo esporte.
+        </p>
 
         <div className="chip-row">
           <button className={mode === 'login' ? 'chip active' : 'chip'} onClick={() => setMode('login')}>

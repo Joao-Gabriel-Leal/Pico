@@ -189,6 +189,42 @@ export function ShareIcon(props) {
   )
 }
 
+export function BookmarkIcon({ filled = false, ...props }) {
+  if (filled) {
+    return (
+      <IconBase {...props} filled>
+        <path d="M7 4.5h10a1 1 0 0 1 1 1V20l-6-3.4L6 20V5.5a1 1 0 0 1 1-1Z" />
+      </IconBase>
+    )
+  }
+
+  return (
+    <IconBase {...props}>
+      <path
+        d="M7 4.5h10a1 1 0 0 1 1 1V20l-6-3.4L6 20V5.5a1 1 0 0 1 1-1Z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.9"
+      />
+    </IconBase>
+  )
+}
+
+export function RouteIcon(props) {
+  return (
+    <IconBase {...props}>
+      <circle cx="6" cy="17" r="2" fill="currentColor" />
+      <circle cx="18" cy="7" r="2" fill="currentColor" />
+      <path
+        d="M8 17c4 0 4-8 8-8"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.9"
+      />
+    </IconBase>
+  )
+}
+
 export function MoreIcon(props) {
   return (
     <IconBase {...props}>

@@ -8,9 +8,11 @@ import EventsPage from './pages/EventsPage'
 import ExplorePage from './pages/ExplorePage'
 import FeedPage from './pages/FeedPage'
 import NewPicoPage from './pages/NewPicoPage'
+import NewRoutePage from './pages/NewRoutePage'
 import NotificationsPage from './pages/NotificationsPage'
 import PicoPage from './pages/PicoPage'
 import ProfilePage from './pages/ProfilePage'
+import RouteDetailPage from './pages/RouteDetailPage'
 import SearchPage from './pages/SearchPage'
 import UserProfilePage from './pages/UserProfilePage'
 
@@ -34,6 +36,8 @@ export default function App() {
           <Route path="/perfil" element={<ProfilePage />} />
           <Route path="/pessoas/:userId" element={<UserProfilePage />} />
           <Route path="/novo-pico" element={<NewPicoPage />} />
+          <Route path="/nova-rota" element={<NewRoutePage />} />
+          <Route path="/rotas/:routeId" element={<RouteDetailPage />} />
         </Route>
       </Routes>
     </AuthProvider>

@@ -101,7 +101,7 @@ export default function ReelPost({ item, token, currentUser, onUpdated, onDelete
       if (navigator.share) {
         await navigator.share({
           title: localItem.title,
-          text: localItem.pico?.name || 'PicoMap',
+          text: localItem.pico?.name || 'PicoHunter',
           url: shareUrl,
         })
         setMessage('Compartilhado.')
@@ -186,7 +186,7 @@ export default function ReelPost({ item, token, currentUser, onUpdated, onDelete
                 </div>
               )}
               <div>
-                <strong>{localItem.author?.username || getDisplayName(localItem.author?.displayName, 'picomap')}</strong>
+                <strong>{localItem.author?.username || getDisplayName(localItem.author?.displayName, 'picohunter')}</strong>
                 <p>
                   {localItem.pico?.name} - {formatDate(localItem.createdAt)}
                 </p>

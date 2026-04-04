@@ -1,4 +1,4 @@
-export function getDisplayName(value, fallback = 'PicoMap') {
+export function getDisplayName(value, fallback = 'PicoHunter') {
   const text = String(value || '').trim()
   return text || fallback
 }

@@ -105,7 +105,7 @@ export default function UserProfilePage() {
             <div className="profile-identity-row">
               <div>
                 <h1>{getDisplayName(detail.person.displayName)}</h1>
-                <p>@{detail.person.username || 'picomap'}</p>
+                <p>@{detail.person.username || 'picohunter'}</p>
               </div>
             </div>
 

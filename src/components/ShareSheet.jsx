@@ -148,7 +148,7 @@ export default function ShareSheet({ open, onClose, token, media, onShared }) {
           />
           <div>
             <strong>{media?.title || 'Post'}</strong>
-            <p>{media?.pico?.name || 'PicoMap'}</p>
+            <p>{media?.pico?.name || 'PicoHunter'}</p>
           </div>
         </div>
 
@@ -185,7 +185,7 @@ export default function ShareSheet({ open, onClose, token, media, onShared }) {
                     {active ? <span className="share-target-check">OK</span> : null}
                   </div>
                   <strong>{getDisplayName(person.displayName)}</strong>
-                  <span>@{person.username || 'picomap'}</span>
+                  <span>@{person.username || 'picohunter'}</span>
                 </button>
               )
             })}

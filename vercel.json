@@ -14,6 +14,8 @@
     { "source": "/picos/:path*", "destination": "/index.html" },
     { "source": "/perfil", "destination": "/index.html" },
     { "source": "/pessoas/:path*", "destination": "/index.html" },
-    { "source": "/novo-pico", "destination": "/index.html" }
+    { "source": "/novo-pico", "destination": "/index.html" },
+    { "source": "/nova-rota", "destination": "/index.html" },
+    { "source": "/rotas/:path*", "destination": "/index.html" }
   ]
 }
