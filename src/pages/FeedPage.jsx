@@ -5,8 +5,7 @@ import { useAuth } from '../auth'
 import RouteFeedCard from '../components/RouteFeedCard'
 import SocialPostCard from '../components/SocialPostCard'
 import { uploadSelectedFile } from '../utils/files'
-import { distanceBetween } from '../utils/geo'
-import { getStoredLocation } from '../utils/location-cache'
+import { distanceBetween, getPreferredLocation } from '../utils/geo'
 import {
   getRouteDistanceFromLocation,
   listStoredRoutes,
@@ -22,7 +21,7 @@ function formatDistance(distanceKm) {
 
 export default function FeedPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const { user, token } = useAuth()
+  const { user, token, liveLocation } = useAuth()
   const [items, setItems] = useState([])
   const [routes, setRoutes] = useState(() => listStoredRoutes())
   const [picos, setPicos] = useState([])
@@ -202,7 +201,7 @@ export default function FeedPage() {
     )
   }
 
-  const userLocation = user?.location || getStoredLocation() || null
+  const userLocation = getPreferredLocation(user?.location, liveLocation)
 
   const routeFeedItems = useMemo(
     () =>

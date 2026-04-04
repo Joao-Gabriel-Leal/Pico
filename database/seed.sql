@@ -5,7 +5,11 @@ values
   (3, 'futebol', 'Futebol'),
   (4, 'tenis', 'Tenis'),
   (5, 'patins', 'Patins'),
-  (6, 'bmx', 'BMX')
+  (6, 'bmx', 'BMX'),
+  (7, 'corrida', 'Corrida'),
+  (8, 'bike', 'Bike'),
+  (9, 'caminhada', 'Caminhada'),
+  (10, 'natacao', 'Natacao')
 on conflict (id) do update
 set
   slug = excluded.slug,

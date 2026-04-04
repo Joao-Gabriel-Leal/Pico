@@ -10,9 +10,8 @@ import {
 } from 'react-leaflet'
 import { useAuth } from '../auth'
 import MediaAsset from '../components/MediaAsset'
-import { distanceBetween, getCurrentPosition } from '../utils/geo'
+import { distanceBetween, getCurrentPosition, getPreferredLocation } from '../utils/geo'
 import { uploadSelectedFile } from '../utils/files'
-import { getStoredLocation } from '../utils/location-cache'
 import {
   createRouteAuthorSnapshot,
   createRouteRecord,
@@ -26,7 +25,7 @@ import {
   saveRouteRecord,
 } from '../utils/routes'
 
-const defaultCenter = [-23.55052, -46.633308]
+const defaultCenter = [-15.816, -47.965]
 
 function RouteMapComposer({ mode, points, onAddPoint, onBoundsChange, center }) {
   const map = useMap()
@@ -68,8 +67,8 @@ function RouteMapComposer({ mode, points, onAddPoint, onBoundsChange, center }) 
 
 export default function NewRoutePage() {
   const navigate = useNavigate()
-  const { user, token } = useAuth()
-  const preferredLocation = user?.location || getStoredLocation()
+  const { user, token, liveLocation } = useAuth()
+  const preferredLocation = getPreferredLocation(user?.location, liveLocation)
   const [mode, setMode] = useState('draw')
   const [points, setPoints] = useState([])
   const [media, setMedia] = useState([])

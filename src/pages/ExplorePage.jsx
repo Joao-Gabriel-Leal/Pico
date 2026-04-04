@@ -15,9 +15,8 @@ import { apiRequest } from '../api'
 import { useAuth } from '../auth'
 import MediaAsset from '../components/MediaAsset'
 import RouteMapPreview from '../components/RouteMapPreview'
-import { distanceBetween, getCurrentPosition } from '../utils/geo'
+import { distanceBetween, getCurrentPosition, getPreferredLocation } from '../utils/geo'
 import {
-  getStoredLocation,
   hasLocationAutoRequested,
   markLocationAutoRequested,
 } from '../utils/location-cache'
@@ -32,7 +31,7 @@ import {
   routeUpdateEvent,
 } from '../utils/routes'
 
-const defaultCenter = [-23.55052, -46.633308]
+const defaultCenter = [-15.816, -47.965]
 const markerPalette = ['orange', 'blue', 'green', 'gold', 'violet', 'red']
 
 function formatDistance(distanceKm) {
@@ -111,8 +110,8 @@ const createSpotIcon = L.divIcon({
 
 export default function ExplorePage() {
   const navigate = useNavigate()
-  const { user, token } = useAuth()
-  const initialLocation = user?.location || getStoredLocation() || null
+  const { user, token, liveLocation } = useAuth()
+  const initialLocation = getPreferredLocation(user?.location, liveLocation)
   const autoLocateRef = useRef(false)
   const hasManualMapMoveRef = useRef(false)
   const [sports, setSports] = useState([])
@@ -144,7 +143,7 @@ export default function ExplorePage() {
   }, [])
 
   useEffect(() => {
-    const nextLocation = user?.location || getStoredLocation() || null
+    const nextLocation = getPreferredLocation(user?.location, liveLocation)
     if (!nextLocation) return
 
     setUserPosition(nextLocation)
@@ -164,17 +163,17 @@ export default function ExplorePage() {
         key: `cached-${nextLocation.latitude}-${nextLocation.longitude}`,
       }
     })
-  }, [user?.location?.latitude, user?.location?.longitude])
+  }, [liveLocation?.latitude, liveLocation?.longitude, user?.location?.latitude, user?.location?.longitude])
 
   useEffect(() => {
     if (autoLocateRef.current) return
     autoLocateRef.current = true
 
-    if (user?.location || getStoredLocation() || hasLocationAutoRequested()) return
+    if (getPreferredLocation(user?.location, liveLocation) || hasLocationAutoRequested()) return
 
     markLocationAutoRequested()
     focusExactLocation({ silent: true })
-  }, [user?.location?.latitude, user?.location?.longitude])
+  }, [liveLocation?.latitude, liveLocation?.longitude, user?.location?.latitude, user?.location?.longitude])
 
   useEffect(() => {
     async function loadBootstrap() {

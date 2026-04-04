@@ -3,8 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { apiRequest } from '../api'
 import { useAuth } from '../auth'
 import { uploadSelectedFile } from '../utils/files'
-import { formatLocation, getCurrentPosition } from '../utils/geo'
-import { getStoredLocation } from '../utils/location-cache'
+import { formatLocation, getCurrentPosition, getPreferredLocation } from '../utils/geo'
 
 function formatMapPoint(latitude, longitude) {
   if (latitude === '' || longitude === '') return 'Nenhum ponto definido ainda'
@@ -14,7 +13,7 @@ function formatMapPoint(latitude, longitude) {
 export default function NewPicoPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { token, user } = useAuth()
+  const { token, user, liveLocation } = useAuth()
   const [sports, setSports] = useState([])
   const [loadingLocation, setLoadingLocation] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -56,7 +55,7 @@ export default function NewPicoPage() {
       return
     }
 
-    const preferredLocation = user?.location || getStoredLocation()
+    const preferredLocation = getPreferredLocation(user?.location, liveLocation)
     if (!preferredLocation) return
 
     setForm((current) => ({
@@ -64,7 +63,7 @@ export default function NewPicoPage() {
       latitude: current.latitude || Number(preferredLocation.latitude).toFixed(6),
       longitude: current.longitude || Number(preferredLocation.longitude).toFixed(6),
     }))
-  }, [searchParams, user])
+  }, [liveLocation, searchParams, user])
 
   const locationPreview = useMemo(() => {
     if (!form.latitude || !form.longitude) return 'Escolha um ponto no mapa ou use sua localizacao exata.'
